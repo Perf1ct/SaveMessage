@@ -8,7 +8,6 @@ const firebaseConfig = {
     apiKey: "AIzaSyDShZqoIBlgUBs-kwS_BoqF6xnnad2dOFU",
     authDomain: "savemessage-d633c.firebaseapp.com",
     projectId: "savemessage-d633c",
-    // ВАЖНО: Замени этот URL на реальный URL твоей Realtime Database из консоли Firebase
     databaseURL: "https://savemessage-d633c-default-rtdb.europe-west1.firebasedatabase.app"
 };
 
@@ -23,10 +22,11 @@ const IMGBB_API_KEY = "95e763ded833904428150d90c7a12f6b";
 
 let user = null;
 let activeChatId = null;
-let activeChatMembers = []; // Чтобы знать, кому звонить
+let activeChatMembers = [];
 let unsubMsgs = null, unsubStatus = null, unsubTyping = null;
 let replyData = null;
 let typingTimeout = null;
+let uploadProgress = null;
 
 const getBadge = (v) => v ? `<i class="fa-solid fa-circle-check verified-badge"></i>` : '';
 
@@ -44,24 +44,16 @@ async function setOnlineStatus(status) {
     }
 }
 
-// Set online status when user joins
 async function setupPresence() {
     if (!user?.uid) return;
     
-    // Set user as online in Firestore
     await setOnlineStatus(true);
     
-    // Set up Realtime Database to handle automatic offline when connection drops
     const userPresenceRef = ref(rtdb, `presence/${user.uid}`);
-    
-    // When connection is lost, set isOnline to false
     await onDisconnect(userPresenceRef).set(false);
-    
-    // Set as online now
     await set(userPresenceRef, true);
 }
 
-// Handle page visibility (tab in background/foreground)
 document.addEventListener('visibilitychange', async () => {
     if (document.hidden) {
         await setOnlineStatus(false);
@@ -70,12 +62,10 @@ document.addEventListener('visibilitychange', async () => {
     }
 });
 
-// Set offline before page unload
 window.addEventListener('beforeunload', () => {
     setOnlineStatus(false);
 });
 
-// Set offline when page is closed/tab closed
 window.addEventListener('unload', () => {
     setOnlineStatus(false);
 });
@@ -152,7 +142,7 @@ onAuthStateChanged(auth, async (u) => {
         user = d.data();
         el('auth-screen').style.display = 'none';
         updateAvatarDisplay();
-        setupPresence(); // Setup online status tracking
+        setupPresence();
         loadChats();
         listenForIncomingCallsRTDB();
     } else {
@@ -160,7 +150,6 @@ onAuthStateChanged(auth, async (u) => {
     }
 });
 
-// --- LOGOUT FUNCTION ---
 window.logoutUser = async () => {
     if (confirm("Вы уверены что хотите выйти?")) {
         try {
@@ -173,46 +162,177 @@ window.logoutUser = async () => {
     }
 };
 
+// --- VIDEO UPLOAD PROGRESS ---
+function showUploadProgress() {
+    const existingProgress = el('upload-progress');
+    if (existingProgress) return;
+    
+    const progressDiv = document.createElement('div');
+    progressDiv.id = 'upload-progress';
+    progressDiv.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: var(--bg-sidebar);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 15px;
+        min-width: 250px;
+        z-index: 5001;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    `;
+    progressDiv.innerHTML = `
+        <div style="font-weight:600; margin-bottom:8px; font-size:13px;">Загрузка видео...</div>
+        <div style="width:100%; height:8px; background:var(--border); border-radius:4px; overflow:hidden;">
+            <div id="progress-bar" style="width:0%; height:100%; background:#6366f1; transition:width 0.3s;"></div>
+        </div>
+        <div id="progress-text" style="font-size:11px; color:var(--text-muted); margin-top:8px; text-align:center;">0%</div>
+    `;
+    document.body.appendChild(progressDiv);
+    uploadProgress = progressDiv;
+}
+
+function updateUploadProgress(percent) {
+    if (!uploadProgress) showUploadProgress();
+    const bar = el('progress-bar');
+    const text = el('progress-text');
+    if (bar) bar.style.width = percent + '%';
+    if (text) text.innerText = percent + '%';
+}
+
+function hideUploadProgress() {
+    if (uploadProgress) {
+        uploadProgress.remove();
+        uploadProgress = null;
+    }
+}
+
 // --- ЗАГРУЗКА ФАЙЛОВ (ФОТО, GIF, ВИДЕО) ---
 el('file-input').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file || !activeChatId) return;
     
     const inputField = el('input-msg');
+    const originalPlaceholder = inputField.placeholder;
     inputField.placeholder = "Загрузка файла...";
     inputField.disabled = true;
 
     try {
         if (file.type.startsWith('video/')) {
-            // Загрузка видео через Catbox API (бесплатно, до 200мб)
-            const formData = new FormData();
-            formData.append("reqtype", "fileupload");
-            formData.append("fileToUpload", file);
-            const response = await fetch("https://catbox.moe/user/api.php", { method: "POST", body: formData });
-            const url = await response.text();
-            if (url.startsWith("http")) await sendMediaMsg(url, "video");
-            else throw new Error("Ошибка Catbox");
+            await uploadVideoToCatbox(file);
         } else {
-            // Загрузка фото/GIF через ImgBB
-            const formData = new FormData();
-            formData.append("image", file);
-            const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
-            const data = await response.json();
-            if (data.success) await sendMediaMsg(data.data.url, "image");
+            await uploadImageToImgBB(file);
         }
-    } catch (err) { alert("Ошибка загрузки файла"); console.error(err); }
+    } catch (err) { 
+        alert("Ошибка загрузки файла: " + err.message); 
+        console.error(err); 
+    }
     finally {
-        inputField.placeholder = "Сообщение...";
+        inputField.placeholder = originalPlaceholder;
         inputField.disabled = false;
-        e.target.value = ""; 
+        e.target.value = "";
+        hideUploadProgress();
     }
 });
 
+// --- UPLOAD VIDEO TO CATBOX (FREE) ---
+async function uploadVideoToCatbox(file) {
+    return new Promise((resolve, reject) => {
+        // Check file size (Catbox allows up to 200MB)
+        if (file.size > 200 * 1024 * 1024) {
+            reject(new Error("Видео должно быть меньше 200MB"));
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("reqtype", "fileupload");
+        formData.append("fileToUpload", file);
+
+        const xhr = new XMLHttpRequest();
+
+        // Track upload progress
+        xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+                const percentComplete = (e.loaded / e.total) * 100;
+                updateUploadProgress(Math.round(percentComplete));
+            }
+        });
+
+        xhr.addEventListener('load', async () => {
+            if (xhr.status === 200) {
+                const url = xhr.responseText.trim();
+                if (url.startsWith("http")) {
+                    await sendMediaMsg(url, "video");
+                    resolve();
+                } else {
+                    reject(new Error("Ошибка Catbox: " + url));
+                }
+            } else {
+                reject(new Error("Ошибка загрузки на Catbox"));
+            }
+        });
+
+        xhr.addEventListener('error', () => {
+            reject(new Error("Ошибка сети при загрузке видео"));
+        });
+
+        xhr.open("POST", "https://catbox.moe/user/api.php");
+        xhr.send(formData);
+    });
+}
+
+// --- UPLOAD IMAGE TO IMGBB (FREE) ---
+async function uploadImageToImgBB(file) {
+    const formData = new FormData();
+    formData.append("image", file);
+
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+                const percentComplete = (e.loaded / e.total) * 100;
+                updateUploadProgress(Math.round(percentComplete));
+            }
+        });
+
+        xhr.addEventListener('load', async () => {
+            if (xhr.status === 200) {
+                const data = JSON.parse(xhr.responseText);
+                if (data.success) {
+                    await sendMediaMsg(data.data.url, "image");
+                    resolve();
+                } else {
+                    reject(new Error("Ошибка ImgBB"));
+                }
+            } else {
+                reject(new Error("Ошибка загрузки на ImgBB"));
+            }
+        });
+
+        xhr.addEventListener('error', () => {
+            reject(new Error("Ошибка сети при загрузке изображения"));
+        });
+
+        xhr.open("POST", `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`);
+        xhr.send(formData);
+    });
+}
+
 async function sendMediaMsg(url, type) {
-    const msgObj = { text: url, type: type, senderId: user.uid, senderNick: user.nickname, senderVerified: user.isVerify || false, createdAt: serverTimestamp() };
+    const msgObj = { 
+        text: url, 
+        type: type, 
+        senderId: user.uid, 
+        senderNick: user.nickname, 
+        senderVerified: user.isVerify || false, 
+        createdAt: serverTimestamp() 
+    };
     if(replyData) { msgObj.replyTo = replyData; cancelReply(); }
     await addDoc(collection(db, `chats/${activeChatId}/messages`), msgObj);
-    await updateDoc(doc(db, "chats", activeChatId), { lastMessage: type === "video" ? "🎥 Видео" : "📷 Фото/GIF" });
+    await updateDoc(doc(db, "chats", activeChatId), { 
+        lastMessage: type === "video" ? "🎥 Видео" : "📷 Фото/GIF" 
+    });
 }
 
 // --- АВАТАР ПРОФИЛЯ (ФОТО) ---
@@ -335,7 +455,6 @@ function loadChats() {
                 onSnapshot(doc(db, "users", otherId), (uDoc) => {
                     const dot = div.querySelector(`#status-${otherId}`);
                     if (dot) dot.className = `status-dot ${uDoc.data()?.isOnline ? 'dot-online' : 'dot-offline'}`;
-                    // Update avatar if changed
                     const avatarDiv = div.querySelector('.avatar');
                     const userData = uDoc.data();
                     if (userData?.avatarUrl) {
@@ -351,13 +470,13 @@ function loadChats() {
 
 window.openChat = (id, name, avatarHtml, isV, chatData) => {
     activeChatId = id;
-    activeChatMembers = chatData.members; // Запоминаем всех участников
+    activeChatMembers = chatData.members;
     let otherId = chatData.type === 'dm' ? chatData.members.find(u => u !== user.uid) : null;
     
     el('active-name').innerHTML = `${name} ${getBadge(isV)}`;
     el('active-emoji').innerHTML = avatarHtml;
     el('add-member-btn').style.display = chatData.type === 'group' ? 'block' : 'none';
-    el('btn-call').style.display = 'block'; // Звонки теперь доступны и в группах
+    el('btn-call').style.display = 'block';
     el('app').classList.add('show-chat');
     cancelReply();
     
@@ -366,7 +485,6 @@ window.openChat = (id, name, avatarHtml, isV, chatData) => {
     if (otherId) {
         unsubStatus = onSnapshot(doc(db, "users", otherId), (uDoc) => {
             el('active-status-dot').className = `status-dot ${uDoc.data()?.isOnline ? 'dot-online' : 'dot-offline'}`;
-            // Update avatar if changed
             const userData = uDoc.data();
             if (userData?.avatarUrl) {
                 el('active-emoji').innerHTML = `<img src="${userData.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
@@ -389,7 +507,7 @@ window.openChat = (id, name, avatarHtml, isV, chatData) => {
             
             let content = m.text;
             if(m.type === "image") content = `<img src="${m.text}" style="max-width:100%; border-radius:15px; margin-top:5px; cursor:pointer;" onclick="window.open('${m.text}')">`;
-            if(m.type === "video") content = `<video src="${m.text}" controls style="max-width:100%; border-radius:15px; margin-top:5px;"></video>`;
+            if(m.type === "video") content = `<video src="${m.text}" controls style="max-width:100%; border-radius:15px; margin-top:5px; background:#000;"></video>`;
 
             const actions = `<i class="fa-solid fa-reply msg-action" onclick="setReply('${mId}', '${m.type ? 'Медиа' : m.text.replace(/'/g, "\\'")}', '${m.senderNick}')"></i>${isMine ? `<i class="fa-solid fa-trash msg-action" onclick="deleteMsg('${mId}')"></i>` : ''}`;
 
@@ -438,7 +556,7 @@ el('input-msg').onkeydown = (e) => { if(e.key === 'Enter') sendMsg(); };
 // --- ГРУППОВЫЕ ЗВОНКИ WEBRTC ПО СЕТИ MESH (REALTIME DATABASE) ---
 const servers = { iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }] };
 let localStream = null;
-let peers = {}; // Объект для хранения RTCPeerConnection: { uid: pc }
+let peers = {};
 let currentCallRoom = null;
 
 window.toggleMic = () => {
@@ -470,12 +588,10 @@ async function setupLocalMedia() {
     } catch(e) { alert("Нет доступа к камере/микрофону"); throw e; }
 }
 
-// 1. Инициатор звонка нажимает кнопку
 window.startCall = async () => {
     if (!activeChatId) return;
     currentCallRoom = activeChatId;
     
-    // Рассылаем уведомления о звонке всем участникам чата (кроме себя)
     activeChatMembers.forEach(memberId => {
         if(memberId !== user.uid) {
             set(ref(rtdb, `ringing/${memberId}`), {
@@ -489,11 +605,10 @@ window.startCall = async () => {
     await joinCallRoom(currentCallRoom);
 };
 
-// 2. Слушаем входящие вызовы
 function listenForIncomingCallsRTDB() {
     onValue(ref(rtdb, `ringing/${user.uid}`), (snap) => {
         const data = snap.val();
-        if (data && (Date.now() - data.timestamp < 30000)) { // Звонок активен 30 секунд
+        if (data && (Date.now() - data.timestamp < 30000)) {
             currentCallRoom = data.roomId;
             el('caller-name').innerText = `@${data.callerNick} приглашает в звонок...`;
             el('modal-incoming-call').style.display = 'flex';
@@ -503,10 +618,9 @@ function listenForIncomingCallsRTDB() {
     });
 }
 
-// 3. Ответ и отбой
 window.answerCall = async () => {
     el('modal-incoming-call').style.display = 'none';
-    await remove(ref(rtdb, `ringing/${user.uid}`)); // Удаляем уведомление
+    await remove(ref(rtdb, `ringing/${user.uid}`));
     if(currentCallRoom) await joinCallRoom(currentCallRoom);
 };
 
@@ -515,26 +629,22 @@ window.rejectCall = async () => {
     await remove(ref(rtdb, `ringing/${user.uid}`));
 };
 
-// 4. Вход в комнату звонка (MESH логика)
 async function joinCallRoom(roomId) {
     el('call-screen').style.display = 'flex';
     await setupLocalMedia();
 
     const myPresenceRef = ref(rtdb, `calls/${roomId}/participants/${user.uid}`);
     await set(myPresenceRef, true);
-    onDisconnect(myPresenceRef).remove(); // Если интернет отпал - выходим
+    onDisconnect(myPresenceRef).remove();
 
-    // Слушаем кто еще в комнате
     onChildAdded(ref(rtdb, `calls/${roomId}/participants`), (snap) => {
         const peerUid = snap.key;
         if (peerUid !== user.uid) {
-            // В MESH сети оффер создает тот, чей UID "больше" (чтобы избежать двойных офферов)
             const isInitiator = user.uid > peerUid; 
             setupPeerConnection(peerUid, roomId, isInitiator);
         }
     });
 
-    // Слушаем удаление участников (кто-то вышел)
     onValue(ref(rtdb, `calls/${roomId}/participants`), (snap) => {
         const activeUsers = snap.val() || {};
         Object.keys(peers).forEach(peerUid => {
@@ -543,17 +653,14 @@ async function joinCallRoom(roomId) {
     });
 }
 
-// 5. Настройка соединения с конкретным участником
 async function setupPeerConnection(peerUid, roomId, isInitiator) {
-    if (peers[peerUid]) return; // Уже соединились
+    if (peers[peerUid]) return;
 
     const pc = new RTCPeerConnection(servers);
     peers[peerUid] = pc;
 
-    // Добавляем свои треки
     localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
 
-    // Принимаем чужие треки
     pc.ontrack = (e) => {
         let vid = el(`vid-${peerUid}`);
         if (!vid) {
@@ -566,25 +673,21 @@ async function setupPeerConnection(peerUid, roomId, isInitiator) {
         vid.srcObject = e.streams[0];
     };
 
-    // Обмен ICE кандидатами
     pc.onicecandidate = (e) => {
         if (e.candidate) {
             push(ref(rtdb, `calls/${roomId}/signals/${user.uid}_${peerUid}/candidates`), e.candidate.toJSON());
         }
     };
 
-    // Слушаем ICE кандидатов от собеседника
     onChildAdded(ref(rtdb, `calls/${roomId}/signals/${peerUid}_${user.uid}/candidates`), (snap) => {
         if(snap.val()) pc.addIceCandidate(new RTCIceCandidate(snap.val()));
     });
 
     if (isInitiator) {
-        // Создаем Offer
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         await set(ref(rtdb, `calls/${roomId}/signals/${user.uid}_${peerUid}/offer`), offer);
 
-        // Ждем Answer
         onValue(ref(rtdb, `calls/${roomId}/signals/${peerUid}_${user.uid}/answer`), async (snap) => {
             const answer = snap.val();
             if (answer && pc.signalingState !== "closed") {
@@ -592,7 +695,6 @@ async function setupPeerConnection(peerUid, roomId, isInitiator) {
             }
         });
     } else {
-        // Ждем Offer, создаем Answer
         onValue(ref(rtdb, `calls/${roomId}/signals/${peerUid}_${user.uid}/offer`), async (snap) => {
             const offer = snap.val();
             if (offer && pc.signalingState !== "closed") {
@@ -619,7 +721,6 @@ window.endCall = async () => {
     
     if (currentCallRoom) {
         await remove(ref(rtdb, `calls/${currentCallRoom}/participants/${user.uid}`));
-        // Очищаем свои сигналы, чтобы не мусорить в БД
         Object.keys(peers).forEach(peerUid => {
             remove(ref(rtdb, `calls/${currentCallRoom}/signals/${user.uid}_${peerUid}`));
         });
@@ -630,7 +731,7 @@ window.endCall = async () => {
     
     localStream = null;
     currentCallRoom = null;
-    await remove(ref(rtdb, `ringing/${user.uid}`)); // На всякий случай
+    await remove(ref(rtdb, `ringing/${user.uid}`));
 };
 
 // --- ПРОФИЛЬ И ГРУППЫ ---
@@ -638,7 +739,6 @@ window.openProfile = () => {
     openModal('modal-profile');
     el('profile-nick').innerText = "@" + user.nickname;
     
-    // Display avatar (photo or emoji)
     const avatarContainer = el('profile-avatar-view');
     if (user?.avatarUrl) {
         avatarContainer.innerHTML = `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
@@ -678,7 +778,6 @@ window.confirmAddMember = async () => {
     if(s.empty) return alert("Не найден");
     await updateDoc(doc(db, "chats", activeChatId), { members: arrayUnion(s.docs[0].data().uid) });
     
-    // Обновляем локальный массив для звонков
     if(!activeChatMembers.includes(s.docs[0].data().uid)) activeChatMembers.push(s.docs[0].data().uid);
     
     closeAllModals();
