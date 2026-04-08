@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, query, where, orderBy, serverTimestamp, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, arrayUnion, limit } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 // ИМПОРТЫ ДЛЯ REALTIME DATABASE (ДЛЯ ЗВОНКОВ)
 import { getDatabase, ref, set, onChildAdded, onValue, push, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
@@ -30,13 +30,55 @@ let typingTimeout = null;
 
 const getBadge = (v) => v ? `<i class="fa-solid fa-circle-check verified-badge"></i>` : '';
 
-// --- ПРИСУТСТВИЕ ---
+// --- ПРИСУТСТВИЕ (ONLINE STATUS) ---
 async function setOnlineStatus(status) {
     if (user?.uid) {
-        await updateDoc(doc(db, "users", user.uid), { isOnline: status });
+        try {
+            await updateDoc(doc(db, "users", user.uid), { 
+                isOnline: status,
+                lastSeen: serverTimestamp()
+            });
+        } catch (e) {
+            console.error("Error updating online status:", e);
+        }
     }
 }
-window.addEventListener('beforeunload', () => setOnlineStatus(false));
+
+// Set online status when user joins
+async function setupPresence() {
+    if (!user?.uid) return;
+    
+    // Set user as online in Firestore
+    await setOnlineStatus(true);
+    
+    // Set up Realtime Database to handle automatic offline when connection drops
+    const userPresenceRef = ref(rtdb, `presence/${user.uid}`);
+    
+    // When connection is lost, set isOnline to false
+    await onDisconnect(userPresenceRef).set(false);
+    
+    // Set as online now
+    await set(userPresenceRef, true);
+}
+
+// Handle page visibility (tab in background/foreground)
+document.addEventListener('visibilitychange', async () => {
+    if (document.hidden) {
+        await setOnlineStatus(false);
+    } else {
+        await setOnlineStatus(true);
+    }
+});
+
+// Set offline before page unload
+window.addEventListener('beforeunload', () => {
+    setOnlineStatus(false);
+});
+
+// Set offline when page is closed/tab closed
+window.addEventListener('unload', () => {
+    setOnlineStatus(false);
+});
 
 el('input-msg').addEventListener('input', async () => {
     if (!activeChatId || !user) return;
@@ -89,7 +131,15 @@ el('btn-auth').onclick = async () => {
             const q = query(collection(db, "users"), where("nickname", "==", nick));
             if (!(await getDocs(q)).empty) return alert("Ник занят!");
             const res = await createUserWithEmailAndPassword(auth, email, pass);
-            await setDoc(doc(db, "users", res.user.uid), { uid: res.user.uid, nickname: nick, emoji: "👤", avatarUrl: null, isVerify: false, isOnline: true });
+            await setDoc(doc(db, "users", res.user.uid), { 
+                uid: res.user.uid, 
+                nickname: nick, 
+                emoji: "👤", 
+                avatarUrl: null, 
+                isVerify: false, 
+                isOnline: true,
+                lastSeen: serverTimestamp()
+            });
         } else {
             await signInWithEmailAndPassword(auth, email, pass);
         }
@@ -102,11 +152,26 @@ onAuthStateChanged(auth, async (u) => {
         user = d.data();
         el('auth-screen').style.display = 'none';
         updateAvatarDisplay();
-        setOnlineStatus(true);
+        setupPresence(); // Setup online status tracking
         loadChats();
         listenForIncomingCallsRTDB();
+    } else {
+        user = null;
     }
 });
+
+// --- LOGOUT FUNCTION ---
+window.logoutUser = async () => {
+    if (confirm("Вы уверены что хотите выйти?")) {
+        try {
+            await setOnlineStatus(false);
+            await signOut(auth);
+            window.location.reload();
+        } catch (e) {
+            console.error("Logout error:", e);
+        }
+    }
+};
 
 // --- ЗАГРУЗКА ФАЙЛОВ (ФОТО, GIF, ВИДЕО) ---
 el('file-input').addEventListener('change', async (e) => {
