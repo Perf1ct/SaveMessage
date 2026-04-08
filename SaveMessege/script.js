@@ -89,7 +89,7 @@ el('btn-auth').onclick = async () => {
             const q = query(collection(db, "users"), where("nickname", "==", nick));
             if (!(await getDocs(q)).empty) return alert("Ник занят!");
             const res = await createUserWithEmailAndPassword(auth, email, pass);
-            await setDoc(doc(db, "users", res.user.uid), { uid: res.user.uid, nickname: nick, emoji: "👤", isVerify: false, isOnline: true });
+            await setDoc(doc(db, "users", res.user.uid), { uid: res.user.uid, nickname: nick, emoji: "👤", avatarUrl: null, isVerify: false, isOnline: true });
         } else {
             await signInWithEmailAndPassword(auth, email, pass);
         }
@@ -101,7 +101,7 @@ onAuthStateChanged(auth, async (u) => {
         const d = await getDoc(doc(db, "users", u.uid));
         user = d.data();
         el('auth-screen').style.display = 'none';
-        el('my-avatar').innerText = user.emoji;
+        updateAvatarDisplay();
         setOnlineStatus(true);
         loadChats();
         listenForIncomingCallsRTDB();
@@ -150,6 +150,69 @@ async function sendMediaMsg(url, type) {
     await updateDoc(doc(db, "chats", activeChatId), { lastMessage: type === "video" ? "🎥 Видео" : "📷 Фото/GIF" });
 }
 
+// --- АВАТАР ПРОФИЛЯ (ФОТО) ---
+function updateAvatarDisplay() {
+    if (user?.avatarUrl) {
+        el('my-avatar').innerHTML = `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+    } else {
+        el('my-avatar').innerText = user?.emoji || "👤";
+    }
+}
+
+function getAvatarHtml(user) {
+    if (user?.avatarUrl) {
+        return `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+    }
+    return user?.emoji || "👤";
+}
+
+window.uploadAvatarPhoto = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const uploadBtn = el('upload-avatar-btn');
+        if (uploadBtn) uploadBtn.disabled = true;
+        
+        try {
+            const formData = new FormData();
+            formData.append("image", file);
+            const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
+            const data = await response.json();
+            
+            if (data.success) {
+                const avatarUrl = data.data.url;
+                await updateDoc(doc(db, "users", user.uid), { avatarUrl: avatarUrl });
+                user.avatarUrl = avatarUrl;
+                updateAvatarDisplay();
+                alert("Аватар обновлен!");
+            } else {
+                throw new Error("Ошибка загрузки");
+            }
+        } catch (err) {
+            alert("Ошибка загрузки аватара");
+            console.error(err);
+        } finally {
+            if (uploadBtn) uploadBtn.disabled = false;
+        }
+    };
+    input.click();
+};
+
+window.removeAvatarPhoto = async () => {
+    if (!confirm("Удалить аватар?")) return;
+    try {
+        await updateDoc(doc(db, "users", user.uid), { avatarUrl: null });
+        user.avatarUrl = null;
+        updateAvatarDisplay();
+    } catch (err) {
+        console.error(err);
+    }
+};
+
 // --- ЛОГИКА ЧАТОВ ---
 window.startDM = async () => {
     const nick = el('search-user').value.trim().toLowerCase();
@@ -163,6 +226,7 @@ window.startDM = async () => {
         id: cid, type: 'dm', members: [user.uid, target.uid],
         nicks: { [user.uid]: user.nickname, [target.uid]: target.nickname },
         emojis: { [user.uid]: user.emoji, [target.uid]: target.emoji },
+        avatarUrls: { [user.uid]: user.avatarUrl || null, [target.uid]: target.avatarUrl || null },
         verified: { [user.uid]: user.isVerify || false, [target.uid]: target.isVerify || false },
         lastMessage: "Чат открыт", typing: { [user.uid]: false, [target.uid]: false }
     }, { merge: true });
@@ -175,13 +239,18 @@ function loadChats() {
         const list = el('ui-chats'); list.innerHTML = '';
         snap.forEach(dSnap => {
             const c = dSnap.data();
-            let title, emoji, isV = false, otherId = null;
+            let title, avatarHtml, isV = false, otherId = null;
             if(c.type === 'group') {
-                title = c.name; emoji = "👥";
+                title = c.name; avatarHtml = "👥";
             } else {
                 otherId = c.members.find(id => id !== user.uid);
                 title = c.nicks?.[otherId] || "User";
-                emoji = c.emojis?.[otherId] || "👤";
+                const otherUser = c.avatarUrls?.[otherId];
+                if (otherUser) {
+                    avatarHtml = `<img src="${otherUser}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+                } else {
+                    avatarHtml = c.emojis?.[otherId] || "👤";
+                }
                 isV = c.verified?.[otherId] || false;
             }
 
@@ -189,7 +258,7 @@ function loadChats() {
             div.className = 'chat-item';
             div.innerHTML = `
                 <div class="avatar-wrap">
-                    <div class="avatar">${emoji}</div>
+                    <div class="avatar">${avatarHtml}</div>
                     <div id="status-${otherId || dSnap.id}" class="status-dot dot-offline"></div>
                 </div>
                 <div style="margin-left:15px; flex:1; overflow:hidden;">
@@ -201,21 +270,27 @@ function loadChats() {
                 onSnapshot(doc(db, "users", otherId), (uDoc) => {
                     const dot = div.querySelector(`#status-${otherId}`);
                     if (dot) dot.className = `status-dot ${uDoc.data()?.isOnline ? 'dot-online' : 'dot-offline'}`;
+                    // Update avatar if changed
+                    const avatarDiv = div.querySelector('.avatar');
+                    const userData = uDoc.data();
+                    if (userData?.avatarUrl) {
+                        avatarDiv.innerHTML = `<img src="${userData.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+                    }
                 });
             }
-            div.onclick = () => openChat(dSnap.id, title, emoji, isV, c);
+            div.onclick = () => openChat(dSnap.id, title, avatarHtml, isV, c);
             list.appendChild(div);
         });
     });
 }
 
-window.openChat = (id, name, emoji, isV, chatData) => {
+window.openChat = (id, name, avatarHtml, isV, chatData) => {
     activeChatId = id;
     activeChatMembers = chatData.members; // Запоминаем всех участников
     let otherId = chatData.type === 'dm' ? chatData.members.find(u => u !== user.uid) : null;
     
     el('active-name').innerHTML = `${name} ${getBadge(isV)}`;
-    el('active-emoji').innerText = emoji;
+    el('active-emoji').innerHTML = avatarHtml;
     el('add-member-btn').style.display = chatData.type === 'group' ? 'block' : 'none';
     el('btn-call').style.display = 'block'; // Звонки теперь доступны и в группах
     el('app').classList.add('show-chat');
@@ -226,6 +301,11 @@ window.openChat = (id, name, emoji, isV, chatData) => {
     if (otherId) {
         unsubStatus = onSnapshot(doc(db, "users", otherId), (uDoc) => {
             el('active-status-dot').className = `status-dot ${uDoc.data()?.isOnline ? 'dot-online' : 'dot-offline'}`;
+            // Update avatar if changed
+            const userData = uDoc.data();
+            if (userData?.avatarUrl) {
+                el('active-emoji').innerHTML = `<img src="${userData.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+            }
         });
     }
 
@@ -492,16 +572,31 @@ window.endCall = async () => {
 window.openProfile = () => {
     openModal('modal-profile');
     el('profile-nick').innerText = "@" + user.nickname;
-    el('profile-emoji-view').innerText = user.emoji;
-    const grid = el('profile-emojis'); grid.innerHTML = '';
-    emojiList.forEach(e => {
-        const s = document.createElement('span'); s.className = 'emoji-item'; s.innerText = e;
-        s.onclick = async () => {
-            await updateDoc(doc(db, "users", user.uid), { emoji: e });
-            user.emoji = e; el('profile-emoji-view').innerText = e; el('my-avatar').innerText = e;
-        };
-        grid.appendChild(s);
-    });
+    
+    // Display avatar (photo or emoji)
+    const avatarContainer = el('profile-avatar-view');
+    if (user?.avatarUrl) {
+        avatarContainer.innerHTML = `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+    } else {
+        avatarContainer.innerText = user?.emoji || "👤";
+    }
+    
+    const grid = el('profile-emojis'); 
+    if (grid) {
+        grid.innerHTML = '';
+        emojiList.forEach(e => {
+            const s = document.createElement('span'); 
+            s.className = 'emoji-item'; 
+            s.innerText = e;
+            s.onclick = async () => {
+                await updateDoc(doc(db, "users", user.uid), { emoji: e });
+                user.emoji = e; 
+                el('profile-avatar-view').innerText = e;
+                updateAvatarDisplay();
+            };
+            grid.appendChild(s);
+        });
+    }
 };
 
 window.confirmCreateGroup = async () => {
