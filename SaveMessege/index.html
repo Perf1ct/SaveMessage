@@ -76,7 +76,7 @@
                     <i class="fa-solid fa-comment"></i> Написать
                 </button>
                 <button class="primary-btn" id="profile-start-call" onclick="startCallWithNick()">
-                    <i class="fa-solid fa-phone"></i> Позвонить
+                    <i class="fa-solid fa-phone"></i> Позво��ить
                 </button>
             </div>
         </div>
@@ -151,7 +151,7 @@
             <div class="settings-list">
                 <button class="setting-item" onclick="toggleDarkMode()">
                     <i class="fa-solid fa-moon"></i>
-                    <span>Темная тема</span>
+                    <span>Тема</span>
                     <i class="fa-solid fa-toggle-on" id="theme-toggle"></i>
                 </button>
                 <button class="setting-item" onclick="toggleNotifications()">
@@ -286,6 +286,12 @@
             </div>
 
             <div class="messages" id="ui-msgs"></div>
+
+            <!-- NEW MESSAGES INDICATOR -->
+            <div class="new-messages-indicator" id="new-messages-btn" onclick="scrollToBottom()" style="display:none;">
+                <i class="fa-solid fa-chevron-down"></i>
+                <span id="new-msg-count">1</span> новое сообщение
+            </div>
 
             <div class="reply-preview-bar" id="reply-bar">
                 <div class="reply-preview-content">
