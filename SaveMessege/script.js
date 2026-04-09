@@ -45,7 +45,7 @@ let isScrolledToBottom = true;
 const getBadge = (v) => v ? `<i class="fa-solid fa-circle-check verified-badge"></i>` : '';
 
 const emojisByCategory = {
-    smileys: ['😊', '😂', '❤️', '😍', '🤔', '😎', '🥳', '😢', '😡', '����', '😴', '😷', '🤮', '🤬', '😈'],
+    smileys: ['😊', '😂', '❤️', '😍', '🤔', '😎', '🥳', '😢', '😡', '🤗', '😴', '😷', '🤮', '🤬', '😈'],
     gestures: ['👋', '👍', '👎', '👏', '🙌', '🤝', '👊', '✊', '🤲', '🙏', '💪', '🦾'],
     objects: ['🎮', '🎸', '🎹', '🎯', '🎲', '🎪', '🎭', '🎬', '📷', '📱', '💻', '⌚'],
     nature: ['🌲', '🌳', '🌴', '🌵', '🌾', '🌿', '☘️', '🍀', '🍁', '🍂', '🌸', '🌺'],
@@ -390,7 +390,7 @@ async function uploadImageToImgBB(file) {
         });
 
         xhr.addEventListener('error', () => {
-            reject(new Error("Ошибка сети при загрузке из��бражения"));
+            reject(new Error("Ошибка сети при загрузке изображения"));
         });
 
         xhr.open("POST", `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`);
@@ -419,7 +419,7 @@ async function sendMediaMsg(url, type, fileName = '') {
     if (type === 'image') lastMsg = '📷 Фото';
 
     await updateDoc(doc(db, "chats", activeChatId), { lastMessage: lastMsg });
-    
+
     if (!isScrolledToBottom) {
         newMessagesCount++;
         showNewMessagesIndicator(newMessagesCount);
@@ -618,10 +618,10 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
     unsubMsgs = onSnapshot(q, (snap) => {
         const box = el('ui-msgs');
         const wasAtBottom = isScrolledToBottom;
-        
+
         box.innerHTML = '';
         let hasNewMessages = false;
-        
+
         snap.forEach(mDoc => {
             const m = mDoc.data();
             const mId = mDoc.id;
@@ -651,12 +651,12 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
                 msgDiv.style.transform = `translateX(0)`;
             };
             box.appendChild(msgDiv);
-            
+
             if (!isMine && !wasAtBottom) {
                 hasNewMessages = true;
             }
         });
-        
+
         if (wasAtBottom) {
             box.scrollTop = box.scrollHeight;
             hideNewMessagesIndicator();
@@ -689,7 +689,7 @@ window.sendMsg = async () => {
         }
         await addDoc(collection(db, `chats/${activeChatId}/messages`), msgObj);
         await updateDoc(doc(db, "chats", activeChatId), { lastMessage: txt });
-        
+
         if (!isScrolledToBottom) {
             newMessagesCount++;
             showNewMessagesIndicator(newMessagesCount);
@@ -756,14 +756,21 @@ window.startCall = async () => {
 };
 
 function listenForIncomingCallsRTDB() {
+    onValue(ref(rtdb, `voice_ringing/${user.uid}`), (snap) => {
+        const data = snap.val();
+        if (data && (Date.now() - data.timestamp < 30000)) {
+            currentCallRoom = data.roomId;
+            el('caller-name').innerText = `@${data.callerNick} звонит...`;
+            el('modal-incoming-call').style.display = 'flex';
+        }
+    });
+
     onValue(ref(rtdb, `ringing/${user.uid}`), (snap) => {
         const data = snap.val();
         if (data && (Date.now() - data.timestamp < 30000)) {
             currentCallRoom = data.roomId;
             el('caller-name').innerText = `@${data.callerNick} приглашает в видео-звонок...`;
             el('modal-incoming-call').style.display = 'flex';
-        } else {
-            el('modal-incoming-call').style.display = 'none';
         }
     });
 }
@@ -771,12 +778,19 @@ function listenForIncomingCallsRTDB() {
 window.answerCall = async () => {
     el('modal-incoming-call').style.display = 'none';
     await remove(ref(rtdb, `ringing/${user.uid}`));
-    if (currentCallRoom) await joinCallRoom(currentCallRoom);
+    await remove(ref(rtdb, `voice_ringing/${user.uid}`));
+    if (currentCallRoom) {
+        const chatDoc = await getDoc(doc(db, "chats", currentCallRoom));
+        if (chatDoc.exists()) {
+            await joinCallRoom(currentCallRoom);
+        }
+    }
 };
 
 window.rejectCall = async () => {
     el('modal-incoming-call').style.display = 'none';
     await remove(ref(rtdb, `ringing/${user.uid}`));
+    await remove(ref(rtdb, `voice_ringing/${user.uid}`));
 };
 
 async function joinCallRoom(roomId) {
@@ -894,19 +908,27 @@ window.startVoiceCall = async () => {
         voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         el('voice-call-screen').style.display = 'flex';
 
-        el('voice-caller-name').innerText = '@Voice Call';
+        const chatDoc = await getDoc(doc(db, "chats", activeChatId));
+        const chatName = chatDoc.data().type === 'dm'
+            ? chatDoc.data().nicks[activeChatMembers.find(id => id !== user.uid)]
+            : chatDoc.data().name;
+
+        el('voice-caller-name').innerText = '@' + chatName;
 
         activeChatMembers.forEach(memberId => {
             if (memberId !== user.uid) {
                 set(ref(rtdb, `voice_ringing/${memberId}`), {
                     roomId: activeChatId,
                     callerNick: user.nickname,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    type: 'voice'
                 });
             }
         });
 
         startVoiceCallTimer();
+
+        await setupVoiceCall();
     } catch (e) {
         alert("Нет доступа к микрофону");
         voiceCallActive = false;
@@ -921,6 +943,71 @@ window.startVoiceCallTimer = () => {
         el('call-timer').innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     }, 1000);
 };
+
+async function setupVoiceCall() {
+    const roomId = activeChatId;
+
+    activeChatMembers.forEach(memberId => {
+        if (memberId !== user.uid) {
+            const isInitiator = user.uid > memberId;
+            setupVoicePeerConnection(memberId, roomId, isInitiator);
+        }
+    });
+}
+
+async function setupVoicePeerConnection(peerId, roomId, isInitiator) {
+    const pc = new RTCPeerConnection(servers);
+    peers[peerId] = pc;
+
+    voiceStream.getTracks().forEach(t => pc.addTrack(t, voiceStream));
+
+    pc.onicecandidate = (e) => {
+        if (e.candidate) {
+            push(ref(rtdb, `voice_signals/${roomId}/${user.uid}_${peerId}/candidates`), e.candidate.toJSON());
+        }
+    };
+
+    onChildAdded(ref(rtdb, `voice_signals/${roomId}/${peerId}_${user.uid}/candidates`), (snap) => {
+        if (snap.val()) {
+            pc.addIceCandidate(new RTCIceCandidate(snap.val())).catch(err => console.error(err));
+        }
+    });
+
+    if (isInitiator) {
+        try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await set(ref(rtdb, `voice_signals/${roomId}/${user.uid}_${peerId}/offer`), offer);
+
+            onValue(ref(rtdb, `voice_signals/${roomId}/${peerId}_${user.uid}/answer`), async (snap) => {
+                const answer = snap.val();
+                if (answer && pc.signalingState === "have-local-offer") {
+                    try {
+                        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+                    } catch (err) {
+                        console.error(err);
+                    }
+                }
+            });
+        } catch (err) {
+            console.error("Error creating offer:", err);
+        }
+    } else {
+        onValue(ref(rtdb, `voice_signals/${roomId}/${peerId}_${user.uid}/offer`), async (snap) => {
+            const offer = snap.val();
+            if (offer && pc.signalingState === "stable") {
+                try {
+                    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    await set(ref(rtdb, `voice_signals/${roomId}/${user.uid}_${peerId}/answer`), answer);
+                } catch (err) {
+                    console.error("Error creating answer:", err);
+                }
+            }
+        });
+    }
+}
 
 window.toggleVoiceMic = () => {
     if (voiceStream) {
@@ -951,11 +1038,24 @@ window.endVoiceCall = async () => {
 
     el('voice-call-screen').style.display = 'none';
 
+    Object.keys(peers).forEach(peerId => {
+        if (peers[peerId]) {
+            peers[peerId].close();
+            delete peers[peerId];
+        }
+    });
+
+    if (activeChatId) {
+        await remove(ref(rtdb, `voice_signals/${activeChatId}`));
+    }
+
     activeChatMembers.forEach(memberId => {
         if (memberId !== user.uid) {
             remove(ref(rtdb, `voice_ringing/${memberId}`));
         }
     });
+
+    voiceStream = null;
 };
 
 // === SCREEN SHARE ===
