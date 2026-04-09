@@ -38,18 +38,65 @@ let screenSharing = false;
 let localStream = null;
 let peers = {};
 let currentCallRoom = null;
+let isDarkMode = localStorage.getItem('darkMode') !== 'false';
+let newMessagesCount = 0;
+let isScrolledToBottom = true;
 
 const getBadge = (v) => v ? `<i class="fa-solid fa-circle-check verified-badge"></i>` : '';
 
-// === EMOJI DATA ===
 const emojisByCategory = {
-    smileys: ['😊', '😂', '❤️', '😍', '🤔', '😎', '🥳', '😢', '😡', '🤗', '😴', '😷', '🤮', '🤬', '😈'],
+    smileys: ['😊', '😂', '❤️', '😍', '🤔', '😎', '🥳', '😢', '😡', '����', '😴', '😷', '🤮', '🤬', '😈'],
     gestures: ['👋', '👍', '👎', '👏', '🙌', '🤝', '👊', '✊', '🤲', '🙏', '💪', '🦾'],
     objects: ['🎮', '🎸', '🎹', '🎯', '🎲', '🎪', '🎭', '🎬', '📷', '📱', '💻', '⌚'],
     nature: ['🌲', '🌳', '🌴', '🌵', '🌾', '🌿', '☘️', '🍀', '🍁', '🍂', '🌸', '🌺'],
     food: ['🍕', '🍔', '🍟', '🌭', '🍿', '🍗', '🍖', '🍝', '🍜', '🍱', '🍣', '🍰'],
     travel: ['✈️', '🚁', '🚂', '🚄', '🚅', '🚆', '🚇', '🚈', '🚉', '🚊', '🚝', '🚞']
 };
+
+// === THEME ===
+function applyTheme() {
+    if (!isDarkMode) {
+        document.body.classList.add('light-mode');
+    } else {
+        document.body.classList.remove('light-mode');
+    }
+}
+
+window.toggleDarkMode = () => {
+    isDarkMode = !isDarkMode;
+    localStorage.setItem('darkMode', isDarkMode);
+    applyTheme();
+    el('theme-toggle').style.opacity = isDarkMode ? '1' : '0.5';
+};
+
+// === NEW MESSAGES ===
+function scrollToBottom() {
+    const msgBox = el('ui-msgs');
+    msgBox.scrollTop = msgBox.scrollHeight;
+    hideNewMessagesIndicator();
+}
+
+function showNewMessagesIndicator(count) {
+    const btn = el('new-messages-btn');
+    const countSpan = el('new-msg-count');
+    if (count > 0) {
+        countSpan.innerText = count;
+        btn.style.display = 'flex';
+    }
+}
+
+function hideNewMessagesIndicator() {
+    el('new-messages-btn').style.display = 'none';
+    newMessagesCount = 0;
+}
+
+el('ui-msgs').addEventListener('scroll', function() {
+    const msgBox = el('ui-msgs');
+    isScrolledToBottom = msgBox.scrollHeight - msgBox.scrollTop - msgBox.clientHeight < 50;
+    if (isScrolledToBottom) {
+        hideNewMessagesIndicator();
+    }
+});
 
 // === ONLINE STATUS ===
 async function setOnlineStatus(status) {
@@ -343,7 +390,7 @@ async function uploadImageToImgBB(file) {
         });
 
         xhr.addEventListener('error', () => {
-            reject(new Error("Ошибка сети при загрузке изображения"));
+            reject(new Error("Ошибка сети при загрузке из��бражения"));
         });
 
         xhr.open("POST", `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`);
@@ -372,6 +419,11 @@ async function sendMediaMsg(url, type, fileName = '') {
     if (type === 'image') lastMsg = '📷 Фото';
 
     await updateDoc(doc(db, "chats", activeChatId), { lastMessage: lastMsg });
+    
+    if (!isScrolledToBottom) {
+        newMessagesCount++;
+        showNewMessagesIndicator(newMessagesCount);
+    }
 }
 
 // === AVATAR SYSTEM ===
@@ -524,7 +576,7 @@ function loadChats() {
     });
 }
 
-window.openChat = (id, name, avatarHtml, isV, chatData) => {
+window.openChat = function(id, name, avatarHtml, isV, chatData) {
     activeChatId = id;
     activeChatMembers = chatData.members;
     let otherId = chatData.type === 'dm' ? chatData.members.find(u => u !== user.uid) : null;
@@ -537,6 +589,10 @@ window.openChat = (id, name, avatarHtml, isV, chatData) => {
     el('btn-group-settings').style.display = chatData.type === 'group' ? 'block' : 'none';
     el('app').classList.add('show-chat');
     cancelReply();
+
+    newMessagesCount = 0;
+    hideNewMessagesIndicator();
+    isScrolledToBottom = true;
 
     if (unsubMsgs) unsubMsgs();
     if (unsubStatus) unsubStatus();
@@ -561,7 +617,11 @@ window.openChat = (id, name, avatarHtml, isV, chatData) => {
     const q = query(collection(db, `chats/${id}/messages`), orderBy("createdAt", "asc"), limit(100));
     unsubMsgs = onSnapshot(q, (snap) => {
         const box = el('ui-msgs');
+        const wasAtBottom = isScrolledToBottom;
+        
         box.innerHTML = '';
+        let hasNewMessages = false;
+        
         snap.forEach(mDoc => {
             const m = mDoc.data();
             const mId = mDoc.id;
@@ -591,8 +651,19 @@ window.openChat = (id, name, avatarHtml, isV, chatData) => {
                 msgDiv.style.transform = `translateX(0)`;
             };
             box.appendChild(msgDiv);
+            
+            if (!isMine && !wasAtBottom) {
+                hasNewMessages = true;
+            }
         });
-        box.scrollTop = box.scrollHeight;
+        
+        if (wasAtBottom) {
+            box.scrollTop = box.scrollHeight;
+            hideNewMessagesIndicator();
+        } else if (hasNewMessages) {
+            newMessagesCount++;
+            showNewMessagesIndicator(newMessagesCount);
+        }
     });
 };
 
@@ -618,6 +689,11 @@ window.sendMsg = async () => {
         }
         await addDoc(collection(db, `chats/${activeChatId}/messages`), msgObj);
         await updateDoc(doc(db, "chats", activeChatId), { lastMessage: txt });
+        
+        if (!isScrolledToBottom) {
+            newMessagesCount++;
+            showNewMessagesIndicator(newMessagesCount);
+        }
     } catch (e) {
         console.error(e);
     }
@@ -818,11 +894,7 @@ window.startVoiceCall = async () => {
         voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         el('voice-call-screen').style.display = 'flex';
 
-        const targetName = activeChatMembers.length === 2 
-            ? activeChatMembers.find(id => id !== user.uid) 
-            : 'Группа';
-
-        el('voice-caller-name').innerText = '@' + (activeChatMembers[0] === user.uid ? 'вам' : 'Group');
+        el('voice-caller-name').innerText = '@Voice Call';
 
         activeChatMembers.forEach(memberId => {
             if (memberId !== user.uid) {
@@ -1110,11 +1182,6 @@ window.loadContacts = async () => {
 };
 
 // === SETTINGS ===
-window.toggleDarkMode = () => {
-    document.body.style.filter = document.body.style.filter === 'invert(1)' ? 'invert(0)' : 'invert(1)';
-    localStorage.setItem('darkMode', document.body.style.filter === 'invert(1)');
-};
-
 window.toggleNotifications = () => {
     const enabled = localStorage.getItem('notifications') !== 'false';
     localStorage.setItem('notifications', !enabled);
@@ -1146,6 +1213,7 @@ window.confirmAddMember = async () => {
 
     if (!activeChatMembers.includes(s.docs[0].data().uid)) activeChatMembers.push(s.docs[0].data().uid);
 
+    el('member-nick').value = '';
     closeAllModals();
 };
 
@@ -1295,6 +1363,8 @@ window.insertEmoji = (emoji) => {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    applyTheme();
+    el('theme-toggle').style.opacity = isDarkMode ? '1' : '0.5';
     loadEmojiGrid('smileys');
 
     const contactsModal = el('modal-contacts');
