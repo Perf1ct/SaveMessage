@@ -41,6 +41,7 @@ let currentCallRoom = null;
 let isDarkMode = localStorage.getItem('darkMode') !== 'false';
 let newMessagesCount = 0;
 let isScrolledToBottom = true;
+let callListeners = {}; // Отслеживание слушателей для очистки
 
 const getBadge = (v) => v ? `<i class="fa-solid fa-circle-check verified-badge"></i>` : '';
 
@@ -133,11 +134,15 @@ window.addEventListener('unload', () => setOnlineStatus(false));
 
 el('input-msg').addEventListener('input', async () => {
     if (!activeChatId || !user) return;
-    await updateDoc(doc(db, "chats", activeChatId), { [`typing.${user.uid}`]: true });
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(async () => {
-        await updateDoc(doc(db, "chats", activeChatId), { [`typing.${user.uid}`]: false });
-    }, 2000);
+    try {
+        await updateDoc(doc(db, "chats", activeChatId), { [`typing.${user.uid}`]: true });
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(async () => {
+            await updateDoc(doc(db, "chats", activeChatId), { [`typing.${user.uid}`]: false });
+        }, 2000);
+    } catch (e) {
+        console.error("Error updating typing status:", e);
+    }
 });
 
 // === UI FUNCTIONS ===
@@ -340,7 +345,7 @@ async function uploadVideoToCatbox(file) {
             }
         });
 
-        xhr.addEventListener('load', async () => {
+        xhr.addEventListener('load', () => {
             if (xhr.status === 200) {
                 const url = xhr.responseText.trim();
                 if (url.startsWith("http")) {
@@ -376,7 +381,7 @@ async function uploadImageToImgBB(file) {
             }
         });
 
-        xhr.addEventListener('load', async () => {
+        xhr.addEventListener('load', () => {
             if (xhr.status === 200) {
                 const data = JSON.parse(xhr.responseText);
                 if (data.success) {
@@ -626,7 +631,7 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             const m = mDoc.data();
             const mId = mDoc.id;
             const isMine = m.senderId === user.uid;
-            let replyHtml = m.replyTo ? `<div class="reply-quote" onclick="document.getElementById('m-${m.replyTo.mId}').scrollIntoView({behavior:'smooth'})"><b>@${m.replyTo.nick}</b><br>${m.replyTo.text.substring(0, 30)}</div>` : '';
+            let replyHtml = m.replyTo ? `<div class="reply-quote" onclick="document.getElementById('m-${m.replyTo.mId}').scrollIntoView({behavior:'smooth'})"><b>@${m.replyTo.nick}</b><br>${m.replyTo.text.substring(0, 40)}</div>` : '';
 
             let content = m.text;
             if (m.type === "image") content = `<img src="${m.text}" style="max-width:100%; border-radius:15px; margin-top:5px; cursor:pointer;" onclick="window.open('${m.text}')">`;
@@ -777,8 +782,12 @@ function listenForIncomingCallsRTDB() {
 
 window.answerCall = async () => {
     el('modal-incoming-call').style.display = 'none';
-    await remove(ref(rtdb, `ringing/${user.uid}`));
-    await remove(ref(rtdb, `voice_ringing/${user.uid}`));
+    try {
+        await remove(ref(rtdb, `ringing/${user.uid}`));
+        await remove(ref(rtdb, `voice_ringing/${user.uid}`));
+    } catch (e) {
+        console.error(e);
+    }
     if (currentCallRoom) {
         const chatDoc = await getDoc(doc(db, "chats", currentCallRoom));
         if (chatDoc.exists()) {
@@ -789,8 +798,12 @@ window.answerCall = async () => {
 
 window.rejectCall = async () => {
     el('modal-incoming-call').style.display = 'none';
-    await remove(ref(rtdb, `ringing/${user.uid}`));
-    await remove(ref(rtdb, `voice_ringing/${user.uid}`));
+    try {
+        await remove(ref(rtdb, `ringing/${user.uid}`));
+        await remove(ref(rtdb, `voice_ringing/${user.uid}`));
+    } catch (e) {
+        console.error(e);
+    }
 };
 
 async function joinCallRoom(roomId) {
@@ -820,82 +833,155 @@ async function joinCallRoom(roomId) {
 async function setupPeerConnection(peerUid, roomId, isInitiator) {
     if (peers[peerUid]) return;
 
-    const pc = new RTCPeerConnection(servers);
-    peers[peerUid] = pc;
+    try {
+        const pc = new RTCPeerConnection(servers);
+        peers[peerUid] = pc;
 
-    localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-
-    pc.ontrack = (e) => {
-        let vid = el(`vid-${peerUid}`);
-        if (!vid) {
-            vid = document.createElement('video');
-            vid.id = `vid-${peerUid}`;
-            vid.autoplay = true;
-            vid.playsInline = true;
-            el('video-grid').insertBefore(vid, el('local-video'));
+        if (localStream && localStream.getTracks().length > 0) {
+            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
         }
-        vid.srcObject = e.streams[0];
-    };
 
-    pc.onicecandidate = (e) => {
-        if (e.candidate) {
-            push(ref(rtdb, `calls/${roomId}/signals/${user.uid}_${peerUid}/candidates`), e.candidate.toJSON());
-        }
-    };
+        pc.ontrack = (e) => {
+            let vid = el(`vid-${peerUid}`);
+            if (!vid) {
+                vid = document.createElement('video');
+                vid.id = `vid-${peerUid}`;
+                vid.autoplay = true;
+                vid.playsInline = true;
+                el('video-grid').insertBefore(vid, el('local-video'));
+            }
+            if (e.streams && e.streams[0]) {
+                vid.srcObject = e.streams[0];
+            }
+        };
 
-    onChildAdded(ref(rtdb, `calls/${roomId}/signals/${peerUid}_${user.uid}/candidates`), (snap) => {
-        if (snap.val()) pc.addIceCandidate(new RTCIceCandidate(snap.val()));
-    });
+        pc.onicecandidate = (e) => {
+            if (e.candidate) {
+                push(ref(rtdb, `calls/${roomId}/signals/${user.uid}_${peerUid}/candidates`), e.candidate.toJSON());
+            }
+        };
 
-    if (isInitiator) {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        await set(ref(rtdb, `calls/${roomId}/signals/${user.uid}_${peerUid}/offer`), offer);
+        pc.onerror = (err) => {
+            console.error(`PeerConnection error for ${peerUid}:`, err);
+        };
 
-        onValue(ref(rtdb, `calls/${roomId}/signals/${peerUid}_${user.uid}/answer`), async (snap) => {
-            const answer = snap.val();
-            if (answer && pc.signalingState !== "closed") {
-                await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        onChildAdded(ref(rtdb, `calls/${roomId}/signals/${peerUid}_${user.uid}/candidates`), (snap) => {
+            if (snap.val() && pc && pc.signalingState !== "closed") {
+                try {
+                    pc.addIceCandidate(new RTCIceCandidate(snap.val()));
+                } catch (err) {
+                    console.error("Error adding ICE candidate:", err);
+                }
             }
         });
-    } else {
-        onValue(ref(rtdb, `calls/${roomId}/signals/${peerUid}_${user.uid}/offer`), async (snap) => {
-            const offer = snap.val();
-            if (offer && pc.signalingState !== "closed") {
-                await pc.setRemoteDescription(new RTCSessionDescription(offer));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                await set(ref(rtdb, `calls/${roomId}/signals/${user.uid}_${peerUid}/answer`), answer);
+
+        if (isInitiator) {
+            try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                await set(ref(rtdb, `calls/${roomId}/signals/${user.uid}_${peerUid}/offer`), offer);
+
+                onValue(ref(rtdb, `calls/${roomId}/signals/${peerUid}_${user.uid}/answer`), async (snap) => {
+                    const answer = snap.val();
+                    if (answer && pc.signalingState === "have-local-offer") {
+                        try {
+                            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+                        } catch (err) {
+                            console.error("Error setting remote description:", err);
+                        }
+                    }
+                });
+            } catch (err) {
+                console.error("Error creating video offer:", err);
+                removePeer(peerUid);
             }
-        });
+        } else {
+            onValue(ref(rtdb, `calls/${roomId}/signals/${peerUid}_${user.uid}/offer`), async (snap) => {
+                const offer = snap.val();
+                if (offer && pc.signalingState === "stable") {
+                    try {
+                        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                        const answer = await pc.createAnswer();
+                        await pc.setLocalDescription(answer);
+                        await set(ref(rtdb, `calls/${roomId}/signals/${user.uid}_${peerUid}/answer`), answer);
+                    } catch (err) {
+                        console.error("Error creating video answer:", err);
+                    }
+                }
+            });
+        }
+    } catch (err) {
+        console.error("Error setting up peer connection:", err);
+        removePeer(peerUid);
     }
 }
 
 function removePeer(peerUid) {
-    if (peers[peerUid]) {
-        peers[peerUid].close();
-        delete peers[peerUid];
+    try {
+        if (peers[peerUid]) {
+            const pc = peers[peerUid];
+            pc.close();
+            delete peers[peerUid];
+        }
+    } catch (err) {
+        console.error("Error closing peer connection:", err);
     }
-    const vid = el(`vid-${peerUid}`);
-    if (vid) vid.remove();
+
+    try {
+        const vid = el(`vid-${peerUid}`);
+        if (vid) {
+            vid.srcObject = null;
+            vid.remove();
+        }
+    } catch (err) {
+        console.error("Error removing video element:", err);
+    }
 }
 
 window.endCall = async () => {
     el('call-screen').style.display = 'none';
 
     if (currentCallRoom) {
-        await remove(ref(rtdb, `calls/${currentCallRoom}/participants/${user.uid}`));
+        try {
+            await remove(ref(rtdb, `calls/${currentCallRoom}/participants/${user.uid}`));
+        } catch (err) {
+            console.error("Error removing participant:", err);
+        }
+
         Object.keys(peers).forEach(peerUid => {
-            remove(ref(rtdb, `calls/${currentCallRoom}/signals/${user.uid}_${peerUid}`));
+            try {
+                remove(ref(rtdb, `calls/${currentCallRoom}/signals/${user.uid}_${peerUid}`));
+            } catch (err) {
+                console.error("Error removing signals:", err);
+            }
         });
     }
 
-    Object.keys(peers).forEach(peerUid => removePeer(peerUid));
-    if (localStream) localStream.getTracks().forEach(t => t.stop());
+    Object.keys(peers).forEach(peerUid => {
+        try {
+            removePeer(peerUid);
+        } catch (err) {
+            console.error("Error removing peer:", err);
+        }
+    });
 
-    localStream = null;
+    if (localStream) {
+        localStream.getTracks().forEach(t => {
+            try {
+                t.stop();
+            } catch (err) {
+                console.error("Error stopping track:", err);
+            }
+        });
+        localStream = null;
+    }
+
     currentCallRoom = null;
-    await remove(ref(rtdb, `ringing/${user.uid}`));
+    try {
+        await remove(ref(rtdb, `ringing/${user.uid}`));
+    } catch (err) {
+        console.error("Error removing ringing:", err);
+    }
 };
 
 // === VOICE CALL ===
@@ -926,16 +1012,17 @@ window.startVoiceCall = async () => {
             }
         });
 
-        startVoiceCallTimer();
-
+        window.startVoiceCallTimer();
         await setupVoiceCall();
     } catch (e) {
+        console.error("Voice call error:", e);
         alert("Нет доступа к микрофону");
         voiceCallActive = false;
     }
 };
 
 window.startVoiceCallTimer = () => {
+    if (voiceCallTimer) clearInterval(voiceCallTimer);
     voiceCallTimer = setInterval(() => {
         const elapsed = Math.floor((Date.now() - voiceCallStartTime) / 1000);
         const mins = Math.floor(elapsed / 60);
@@ -956,56 +1043,77 @@ async function setupVoiceCall() {
 }
 
 async function setupVoicePeerConnection(peerId, roomId, isInitiator) {
-    const pc = new RTCPeerConnection(servers);
-    peers[peerId] = pc;
+    if (peers[peerId]) {
+        console.warn(`Voice peer already exists for ${peerId}`);
+        return;
+    }
 
-    voiceStream.getTracks().forEach(t => pc.addTrack(t, voiceStream));
+    try {
+        const pc = new RTCPeerConnection(servers);
+        peers[peerId] = pc;
 
-    pc.onicecandidate = (e) => {
-        if (e.candidate) {
-            push(ref(rtdb, `voice_signals/${roomId}/${user.uid}_${peerId}/candidates`), e.candidate.toJSON());
+        if (voiceStream && voiceStream.getTracks().length > 0) {
+            voiceStream.getTracks().forEach(t => pc.addTrack(t, voiceStream));
         }
-    };
 
-    onChildAdded(ref(rtdb, `voice_signals/${roomId}/${peerId}_${user.uid}/candidates`), (snap) => {
-        if (snap.val()) {
-            pc.addIceCandidate(new RTCIceCandidate(snap.val())).catch(err => console.error(err));
-        }
-    });
+        pc.onicecandidate = (e) => {
+            if (e.candidate) {
+                push(ref(rtdb, `voice_signals/${roomId}/${user.uid}_${peerId}/candidates`), e.candidate.toJSON());
+            }
+        };
 
-    if (isInitiator) {
-        try {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            await set(ref(rtdb, `voice_signals/${roomId}/${user.uid}_${peerId}/offer`), offer);
+        pc.onerror = (err) => {
+            console.error(`Voice PeerConnection error for ${peerId}:`, err);
+        };
 
-            onValue(ref(rtdb, `voice_signals/${roomId}/${peerId}_${user.uid}/answer`), async (snap) => {
-                const answer = snap.val();
-                if (answer && pc.signalingState === "have-local-offer") {
-                    try {
-                        await pc.setRemoteDescription(new RTCSessionDescription(answer));
-                    } catch (err) {
-                        console.error(err);
-                    }
-                }
-            });
-        } catch (err) {
-            console.error("Error creating offer:", err);
-        }
-    } else {
-        onValue(ref(rtdb, `voice_signals/${roomId}/${peerId}_${user.uid}/offer`), async (snap) => {
-            const offer = snap.val();
-            if (offer && pc.signalingState === "stable") {
+        onChildAdded(ref(rtdb, `voice_signals/${roomId}/${peerId}_${user.uid}/candidates`), (snap) => {
+            if (snap.val() && pc && pc.signalingState !== "closed") {
                 try {
-                    await pc.setRemoteDescription(new RTCSessionDescription(offer));
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    await set(ref(rtdb, `voice_signals/${roomId}/${user.uid}_${peerId}/answer`), answer);
+                    pc.addIceCandidate(new RTCIceCandidate(snap.val()));
                 } catch (err) {
-                    console.error("Error creating answer:", err);
+                    console.error("Error adding voice ICE candidate:", err);
                 }
             }
         });
+
+        if (isInitiator) {
+            try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                await set(ref(rtdb, `voice_signals/${roomId}/${user.uid}_${peerId}/offer`), offer);
+
+                onValue(ref(rtdb, `voice_signals/${roomId}/${peerId}_${user.uid}/answer`), async (snap) => {
+                    const answer = snap.val();
+                    if (answer && pc.signalingState === "have-local-offer") {
+                        try {
+                            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+                        } catch (err) {
+                            console.error("Error setting voice remote description:", err);
+                        }
+                    }
+                });
+            } catch (err) {
+                console.error("Error creating voice offer:", err);
+                removePeer(peerId);
+            }
+        } else {
+            onValue(ref(rtdb, `voice_signals/${roomId}/${peerId}_${user.uid}/offer`), async (snap) => {
+                const offer = snap.val();
+                if (offer && pc.signalingState === "stable") {
+                    try {
+                        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                        const answer = await pc.createAnswer();
+                        await pc.setLocalDescription(answer);
+                        await set(ref(rtdb, `voice_signals/${roomId}/${user.uid}_${peerId}/answer`), answer);
+                    } catch (err) {
+                        console.error("Error creating voice answer:", err);
+                    }
+                }
+            });
+        }
+    } catch (err) {
+        console.error("Error setting up voice peer connection:", err);
+        removePeer(peerId);
     }
 }
 
@@ -1033,37 +1141,57 @@ window.toggleSpeaker = () => {
 
 window.endVoiceCall = async () => {
     voiceCallActive = false;
-    if (voiceCallTimer) clearInterval(voiceCallTimer);
-    if (voiceStream) voiceStream.getTracks().forEach(t => t.stop());
+    if (voiceCallTimer) {
+        clearInterval(voiceCallTimer);
+        voiceCallTimer = null;
+    }
 
     el('voice-call-screen').style.display = 'none';
 
     Object.keys(peers).forEach(peerId => {
-        if (peers[peerId]) {
-            peers[peerId].close();
-            delete peers[peerId];
+        try {
+            removePeer(peerId);
+        } catch (err) {
+            console.error("Error removing voice peer:", err);
         }
     });
 
+    if (voiceStream) {
+        voiceStream.getTracks().forEach(t => {
+            try {
+                t.stop();
+            } catch (err) {
+                console.error("Error stopping voice track:", err);
+            }
+        });
+        voiceStream = null;
+    }
+
     if (activeChatId) {
-        await remove(ref(rtdb, `voice_signals/${activeChatId}`));
+        try {
+            await remove(ref(rtdb, `voice_signals/${activeChatId}`));
+        } catch (err) {
+            console.error("Error removing voice signals:", err);
+        }
     }
 
     activeChatMembers.forEach(memberId => {
         if (memberId !== user.uid) {
-            remove(ref(rtdb, `voice_ringing/${memberId}`));
+            try {
+                remove(ref(rtdb, `voice_ringing/${memberId}`));
+            } catch (err) {
+                console.error("Error removing voice ringing:", err);
+            }
         }
     });
-
-    voiceStream = null;
 };
 
 // === SCREEN SHARE ===
 window.toggleScreenShare = async () => {
     if (screenSharing) {
-        stopScreenShare();
+        window.stopScreenShare();
     } else {
-        await startScreenShare();
+        await window.startScreenShare();
     }
 };
 
@@ -1090,15 +1218,19 @@ window.startScreenShare = async () => {
         if (localStream && currentCallRoom) {
             const screenTrack = screenStream.getVideoTracks()[0];
             Object.keys(peers).forEach(peerUid => {
-                const sender = peers[peerUid].getSenders().find(s => s.track?.kind === 'video');
-                if (sender) {
-                    sender.replaceTrack(screenTrack);
+                try {
+                    const sender = peers[peerUid].getSenders().find(s => s.track?.kind === 'video');
+                    if (sender) {
+                        sender.replaceTrack(screenTrack);
+                    }
+                } catch (err) {
+                    console.error("Error replacing track:", err);
                 }
             });
         }
 
         screenStream.getVideoTracks()[0].onended = () => {
-            stopScreenShare();
+            window.stopScreenShare();
         };
     } catch (err) {
         console.error("Error sharing screen:", err);
@@ -1110,7 +1242,13 @@ window.startScreenShare = async () => {
 
 window.stopScreenShare = async () => {
     if (screenStream) {
-        screenStream.getTracks().forEach(track => track.stop());
+        screenStream.getTracks().forEach(track => {
+            try {
+                track.stop();
+            } catch (err) {
+                console.error("Error stopping screen track:", err);
+            }
+        });
         screenStream = null;
     }
 
@@ -1126,9 +1264,13 @@ window.stopScreenShare = async () => {
         const videoTrack = localStream.getVideoTracks()[0];
         if (videoTrack) {
             Object.keys(peers).forEach(peerUid => {
-                const sender = peers[peerUid].getSenders().find(s => s.track?.kind === 'video');
-                if (sender) {
-                    sender.replaceTrack(videoTrack);
+                try {
+                    const sender = peers[peerUid].getSenders().find(s => s.track?.kind === 'video');
+                    if (sender) {
+                        sender.replaceTrack(videoTrack);
+                    }
+                } catch (err) {
+                    console.error("Error replacing video track:", err);
                 }
             });
         }
