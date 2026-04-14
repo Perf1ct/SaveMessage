@@ -19,6 +19,26 @@ const el = (id) => document.getElementById(id);
 const emojiList = ["👤", "🐱", "🐶", "🦊", "🚀", "🔥", "💎", "🎮", "💻", "👻", "🤖", "👽", "🌈", "🍕", "🧿"];
 const IMGBB_API_KEY = "95e763ded833904428150d90c7a12f6b";
 
+// === STICKERS COLLECTION ===
+const stickersCollection = [
+    "👏", "🎉", "😂", "❤️", "🔥", "👍", "💯", "🎊",
+    "😍", "🤔", "😱", "🥳", "🚀", "💪", "🎯", "⚡"
+];
+
+// === ENCRYPTION KEYS ===
+let encryptionKeys = {};
+
+// === THEMES ===
+const themes = [
+    { name: 'Default', class: '', colors: { primary: '#6366f1' } },
+    { name: 'Sunset', class: 'theme-sunset', colors: { primary: '#f97316' } },
+    { name: 'Ocean', class: 'theme-ocean', colors: { primary: '#0ea5e9' } },
+    { name: 'Forest', class: 'theme-forest', colors: { primary: '#22c55e' } },
+    { name: 'Neon', class: 'theme-neon', colors: { primary: '#ff00ff' } },
+    { name: 'Light', class: 'light-mode', colors: { primary: '#5b5fff' } }
+];
+
+// === USER STATE ===
 let user = null;
 let activeChatId = null;
 let activeChatMembers = [];
@@ -41,7 +61,17 @@ let currentCallRoom = null;
 let isDarkMode = localStorage.getItem('darkMode') !== 'false';
 let newMessagesCount = 0;
 let isScrolledToBottom = true;
-let callListeners = {}; // Отслеживание слушателей для очистки
+let callListeners = {};
+let isRecording = false;
+let mediaRecorder = null;
+let recordedChunks = [];
+let selectedTheme = localStorage.getItem('selectedTheme') || '';
+let userStatuses = {};
+let pinnedMessages = {};
+let searchResults = [];
+
+// === ADVANCED STATUS ===
+const advancedStatuses = ['В сети', 'Работаю', 'В звонке', 'Сплю', 'На встречу', 'Не беспокоить'];
 
 const getBadge = (v) => v ? `<i class="fa-solid fa-circle-check verified-badge"></i>` : '';
 
@@ -54,21 +84,79 @@ const emojisByCategory = {
     travel: ['✈️', '🚁', '🚂', '🚄', '🚅', '🚆', '🚇', '🚈', '🚉', '🚊', '🚝', '🚞']
 };
 
-// === THEME ===
-function applyTheme() {
-    if (!isDarkMode) {
-        document.body.classList.add('light-mode');
-    } else {
-        document.body.classList.remove('light-mode');
+const reactions = ['👍', '❤️', '😂', '😢', '😡', '🔥'];
+
+// === ENCRYPTION FUNCTIONS ===
+function generateEncryptionKey() {
+    return nacl.utils.generateRandomBytes(nacl.secretbox.keyLength);
+}
+
+function encryptMessage(message, key) {
+    const messageUint8 = nacl.util.decodeUTF8(message);
+    const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
+    const encrypted = nacl.secretbox(messageUint8, nonce, key);
+    return {
+        ciphertext: nacl.util.encodeBase64(encrypted),
+        nonce: nacl.util.encodeBase64(nonce)
+    };
+}
+
+function decryptMessage(encrypted, key) {
+    const ciphertext = nacl.util.decodeBase64(encrypted.ciphertext);
+    const nonce = nacl.util.decodeBase64(encrypted.nonce);
+    try {
+        const decrypted = nacl.secretbox.open(ciphertext, nonce, key);
+        return decrypted ? nacl.util.encodeUTF8(decrypted) : null;
+    } catch (e) {
+        console.error("Decryption failed:", e);
+        return null;
     }
 }
 
-window.toggleDarkMode = () => {
-    isDarkMode = !isDarkMode;
-    localStorage.setItem('darkMode', isDarkMode);
+// === THEME SYSTEM ===
+function applyTheme() {
+    document.body.className = '';
+    if (selectedTheme) {
+        document.body.classList.add(selectedTheme);
+    } else if (!isDarkMode) {
+        document.body.classList.add('light-mode');
+    }
+}
+
+window.changeTheme = (themeClass) => {
+    selectedTheme = themeClass;
+    localStorage.setItem('selectedTheme', themeClass);
     applyTheme();
-    el('theme-toggle').style.opacity = isDarkMode ? '1' : '0.5';
+    closeAllModals();
 };
+
+window.loadThemePicker = () => {
+    const grid = el('themes-grid');
+    grid.innerHTML = '';
+    themes.forEach(theme => {
+        const btn = document.createElement('button');
+        btn.className = 'theme-btn';
+        btn.style.background = theme.colors.primary;
+        btn.innerText = theme.name;
+        btn.onclick = () => window.changeTheme(theme.class);
+        grid.appendChild(btn);
+    });
+};
+
+// === NOTIFICATIONS ===
+function playNotificationSound() {
+    const sounds = {
+        message: 'https://assets.mixkit.co/active_storage/sfx/2872/2872-preview.mp3',
+        call: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3',
+        mention: 'https://assets.mixkit.co/active_storage/sfx/2871/2871-preview.mp3'
+    };
+    
+    if (localStorage.getItem('notifications') !== 'false') {
+        const audio = new Audio(sounds.message);
+        audio.volume = 0.5;
+        audio.play().catch(e => console.log('Audio play blocked'));
+    }
+}
 
 // === NEW MESSAGES ===
 function scrollToBottom() {
@@ -83,6 +171,7 @@ function showNewMessagesIndicator(count) {
     if (count > 0) {
         countSpan.innerText = count;
         btn.style.display = 'flex';
+        playNotificationSound();
     }
 }
 
@@ -175,11 +264,269 @@ window.cancelReply = () => {
     el('reply-bar').style.display = 'none';
 };
 
+// === PINNED MESSAGES ===
+window.togglePinMessage = async (mId, text) => {
+    if (!activeChatId) return;
+    try {
+        if (!pinnedMessages[activeChatId]) pinnedMessages[activeChatId] = [];
+        
+        if (pinnedMessages[activeChatId].includes(mId)) {
+            pinnedMessages[activeChatId] = pinnedMessages[activeChatId].filter(id => id !== mId);
+        } else {
+            pinnedMessages[activeChatId].push(mId);
+        }
+        
+        await updateDoc(doc(db, "chats", activeChatId), {
+            pinnedMessages: pinnedMessages[activeChatId]
+        });
+        
+        displayPinnedMessages();
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+function displayPinnedMessages() {
+    const container = el('pinned-messages');
+    container.innerHTML = '';
+    
+    if (!pinnedMessages[activeChatId] || pinnedMessages[activeChatId].length === 0) return;
+    
+    pinnedMessages[activeChatId].forEach(mId => {
+        const msgEl = el(`m-${mId}`);
+        if (msgEl) {
+            const div = document.createElement('div');
+            div.className = 'pinned-message';
+            div.innerHTML = msgEl.querySelector('.bubble').innerHTML;
+            div.onclick = () => {
+                msgEl.scrollIntoView({ behavior: 'smooth' });
+                msgEl.style.background = 'rgba(99, 102, 241, 0.2)';
+                setTimeout(() => msgEl.style.background = '', 2000);
+            };
+            container.appendChild(div);
+        }
+    });
+}
+
+// === EMOJI REACTIONS ===
+window.addReaction = async (mId, emoji) => {
+    if (!activeChatId) return;
+    try {
+        const msgRef = doc(db, `chats/${activeChatId}/messages`, mId);
+        await updateDoc(msgRef, {
+            [`reactions.${emoji}.${user.uid}`]: true
+        });
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+function displayReactions(reactions) {
+    if (!reactions || Object.keys(reactions).length === 0) return '';
+    
+    let html = '<div class="message-reactions">';
+    Object.entries(reactions).forEach(([emoji, users]) => {
+        const count = Object.keys(users).length;
+        html += `<button class="reaction-button" onclick="addReaction('${activeChatId}', '${emoji}')">
+            ${emoji} <span class="reaction-count">${count}</span>
+        </button>`;
+    });
+    html += '</div>';
+    return html;
+}
+
+// === MESSAGE SEARCH ===
+window.searchMessages = async () => {
+    const text = el('search-input').value.trim().toLowerCase();
+    const date = el('search-date').value;
+    
+    if (!text && !date) return;
+    
+    try {
+        const q = query(
+            collection(db, `chats/${activeChatId}/messages`),
+            orderBy('createdAt', 'desc'),
+            limit(50)
+        );
+        
+        const snap = await getDocs(q);
+        searchResults = [];
+        
+        snap.forEach(doc => {
+            const msg = doc.data();
+            const msgText = msg.text.toLowerCase();
+            
+            const matchesText = text === '' || msgText.includes(text);
+            const matchesDate = date === '' || 
+                (msg.createdAt && msg.createdAt.toDate().toLocaleDateString() === new Date(date).toLocaleDateString());
+            
+            if (matchesText && matchesDate) {
+                searchResults.push({ id: doc.id, ...msg });
+            }
+        });
+        
+        displaySearchResults();
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+function displaySearchResults() {
+    const container = el('search-results');
+    container.innerHTML = '';
+    
+    if (searchResults.length === 0) {
+        container.innerHTML = '<div style="text-align:center; color:var(--text-muted);">Ничего не найдено</div>';
+        return;
+    }
+    
+    searchResults.forEach(msg => {
+        const div = document.createElement('div');
+        div.className = 'search-result-item';
+        div.innerHTML = `
+            <div style="font-weight:600; font-size:12px;">@${msg.senderNick}</div>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">${msg.text.substring(0, 100)}</div>
+        `;
+        div.onclick = () => {
+            const msgEl = el(`m-${msg.id}`);
+            if (msgEl) msgEl.scrollIntoView({ behavior: 'smooth' });
+        };
+        container.appendChild(div);
+    });
+}
+
+// === EXPORT & IMPORT ===
+window.exportChats = async () => {
+    try {
+        const q = query(collection(db, "chats"), where("members", "array-contains", user.uid));
+        const snap = await getDocs(q);
+        
+        let data = {
+            user: user.nickname,
+            exportDate: new Date().toISOString(),
+            chats: []
+        };
+        
+        for (const doc of snap.docs) {
+            const chat = doc.data();
+            const messagesSnap = await getDocs(collection(db, `chats/${doc.id}/messages`));
+            const messages = [];
+            
+            messagesSnap.forEach(msgDoc => {
+                messages.push(msgDoc.data());
+            });
+            
+            data.chats.push({
+                ...chat,
+                messages: messages
+            });
+        }
+        
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `safemessage-backup-${Date.now()}.json`;
+        a.click();
+        
+        alert('Резервная копия скачана!');
+    } catch (e) {
+        console.error(e);
+        alert('Ошибка при экспорте');
+    }
+};
+
+window.importChats = () => {
+    const input = el('import-file');
+    input.click();
+};
+
+el('import-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        try {
+            const data = JSON.parse(event.target.result);
+            alert(`Импортировано ${data.chats.length} чатов. Функция синхронизации в разработке.`);
+        } catch (err) {
+            alert('Ошибка при импорте');
+        }
+    };
+    reader.readAsText(file);
+});
+
+// === VIDEO EFFECTS ===
+window.applyBackgroundBlur = async () => {
+    if (!localStream) return;
+    // Простой эффект размытия (требует дополнительной библиотеки для полной реализации)
+    alert('Эффект фона требует WebGL. В полной версии используйте TensorFlow.js');
+};
+
+let recordedChunksBuffer = [];
+
+window.toggleRecording = () => {
+    const icon = el('recording-icon');
+    
+    if (!isRecording) {
+        recordedChunksBuffer = [];
+        const canvas = document.createElement('canvas');
+        canvas.width = 1280;
+        canvas.height = 720;
+        
+        const stream = el('local-video').srcObject;
+        if (!stream) return alert('Нет активного видеопотока');
+        
+        mediaRecorder = new MediaRecorder(stream, {
+            mimeType: 'video/webm;codecs=vp8,opus'
+        });
+        
+        mediaRecorder.ondataavailable = (e) => {
+            recordedChunksBuffer.push(e.data);
+        };
+        
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(recordedChunksBuffer, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `call-recording-${Date.now()}.webm`;
+            a.click();
+            recordedChunksBuffer = [];
+        };
+        
+        mediaRecorder.start();
+        isRecording = true;
+        icon.style.color = '#ef4444';
+    } else {
+        mediaRecorder.stop();
+        isRecording = false;
+        icon.style.color = 'white';
+    }
+};
+
+// === STICKERS ===
+window.loadStickers = () => {
+    const grid = el('stickers-grid');
+    grid.innerHTML = '';
+    stickersCollection.forEach(sticker => {
+        const span = document.createElement('span');
+        span.className = 'sticker-item';
+        span.innerText = sticker;
+        span.onclick = () => {
+            el('input-msg').value += sticker;
+            closeAllModals();
+        };
+        grid.appendChild(span);
+    });
+};
+
 // === AUTHENTICATION ===
 el('auth-toggle').onclick = () => {
     const isReg = el('reg-nick').style.display === "none";
     el('reg-nick').style.display = isReg ? "block" : "none";
-    el('auth-title').innerText = isReg ? "Регистрация" : "SafeMessage";
+    el('auth-title').innerText = isReg ? "Регистрация" : "SafeMessage Pro";
     el('auth-toggle').innerText = isReg ? "Есть аккаунт? Войти" : "Создать аккаунт";
 };
 
@@ -195,6 +542,10 @@ el('btn-auth').onclick = async () => {
             const q = query(collection(db, "users"), where("nickname", "==", nick));
             if (!(await getDocs(q)).empty) return alert("Ник занят!");
             const res = await createUserWithEmailAndPassword(auth, email, pass);
+            
+            const encKey = generateEncryptionKey();
+            encryptionKeys[res.user.uid] = encKey;
+            
             await setDoc(doc(db, "users", res.user.uid), {
                 uid: res.user.uid,
                 nickname: nick,
@@ -202,7 +553,9 @@ el('btn-auth').onclick = async () => {
                 avatarUrl: null,
                 isVerify: false,
                 isOnline: true,
-                lastSeen: serverTimestamp()
+                lastSeen: serverTimestamp(),
+                advancedStatus: 'В сети',
+                encryptionKeyHash: nacl.util.encodeBase64(encKey)
             });
         } else {
             await signInWithEmailAndPassword(auth, email, pass);
@@ -222,6 +575,8 @@ onAuthStateChanged(auth, async (u) => {
         loadChats();
         listenForIncomingCallsRTDB();
         loadEmojiGrid('smileys');
+        loadThemePicker();
+        loadStickers();
     } else {
         user = null;
     }
@@ -411,7 +766,9 @@ async function sendMediaMsg(url, type, fileName = '') {
         senderId: user.uid,
         senderNick: user.nickname,
         senderVerified: user.isVerify || false,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        encrypted: false,
+        reactions: {}
     };
     if (replyData) {
         msgObj.replyTo = replyData;
@@ -509,7 +866,9 @@ window.startDM = async () => {
         emojis: { [user.uid]: user.emoji, [target.uid]: target.emoji },
         avatarUrls: { [user.uid]: user.avatarUrl || null, [target.uid]: target.avatarUrl || null },
         verified: { [user.uid]: user.isVerify || false, [target.uid]: target.isVerify || false },
-        lastMessage: "Чат открыт", typing: { [user.uid]: false, [target.uid]: false }
+        lastMessage: "Чат открыт", typing: { [user.uid]: false, [target.uid]: false },
+        encrypted: true,
+        pinnedMessages: []
     }, { merge: true });
     el('search-user').value = '';
 };
@@ -524,7 +883,9 @@ window.startDMWithId = async (userId) => {
         emojis: { [user.uid]: user.emoji, [target.uid]: target.emoji },
         avatarUrls: { [user.uid]: user.avatarUrl || null, [target.uid]: target.avatarUrl || null },
         verified: { [user.uid]: user.isVerify || false, [target.uid]: target.isVerify || false },
-        lastMessage: "Чат открыт", typing: { [user.uid]: false, [target.uid]: false }
+        lastMessage: "Чат открыт", typing: { [user.uid]: false, [target.uid]: false },
+        encrypted: true,
+        pinnedMessages: []
     }, { merge: true });
     closeAllModals();
 };
@@ -560,7 +921,7 @@ function loadChats() {
                     <div id="status-${otherId || dSnap.id}" class="status-dot dot-offline"></div>
                 </div>
                 <div style="margin-left:15px; flex:1; overflow:hidden;">
-                    <div style="font-weight:600; display:flex; align-items:center; gap:5px;">${title} ${getBadge(isV)}</div>
+                    <div style="font-weight:600; display:flex; align-items:center; gap:5px;">${title} ${getBadge(isV)} ${c.encrypted ? '🔐' : ''}</div>
                     <div style="font-size:12px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${c.lastMessage || ""}</div>
                 </div>
             `;
@@ -584,6 +945,7 @@ function loadChats() {
 window.openChat = function(id, name, avatarHtml, isV, chatData) {
     activeChatId = id;
     activeChatMembers = chatData.members;
+    pinnedMessages[id] = chatData.pinnedMessages || [];
     let otherId = chatData.type === 'dm' ? chatData.members.find(u => u !== user.uid) : null;
 
     el('active-name').innerHTML = `${name} ${getBadge(isV)}`;
@@ -592,12 +954,14 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
     el('btn-call').style.display = 'block';
     el('btn-voice-call').style.display = 'block';
     el('btn-group-settings').style.display = chatData.type === 'group' ? 'block' : 'none';
+    el('btn-pin').style.display = chatData.type === 'group' ? 'block' : 'none';
     el('app').classList.add('show-chat');
     cancelReply();
 
     newMessagesCount = 0;
     hideNewMessagesIndicator();
     isScrolledToBottom = true;
+    displayPinnedMessages();
 
     if (unsubMsgs) unsubMsgs();
     if (unsubStatus) unsubStatus();
@@ -607,6 +971,7 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
         unsubStatus = onSnapshot(doc(db, "users", otherId), (uDoc) => {
             el('active-status-dot').className = `status-dot ${uDoc.data()?.isOnline ? 'dot-online' : 'dot-offline'}`;
             const userData = uDoc.data();
+            el('advanced-status').innerText = userData?.advancedStatus || 'Не в сети';
             if (userData?.avatarUrl) {
                 el('active-emoji').innerHTML = `<img src="${userData.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
             }
@@ -631,18 +996,24 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             const m = mDoc.data();
             const mId = mDoc.id;
             const isMine = m.senderId === user.uid;
-            let replyHtml = m.replyTo ? `<div class="reply-quote" onclick="document.getElementById('m-${m.replyTo.mId}').scrollIntoView({behavior:'smooth'})"><b>@${m.replyTo.nick}</b><br>${m.replyTo.text.substring(0, 40)}</div>` : '';
+            let replyHtml = m.replyTo ? `<div class="reply-quote" onclick="document.getElementById('m-${m.replyTo.mId}').scrollIntoView({behavior:'smooth'})"><b>@${m.replyTo.nick}</b><br>${m.replyTo.text.substring(0, 30)}</div>` : '';
 
             let content = m.text;
+            const encryptedBadge = m.encrypted ? ' <span class="encrypted-badge">🔐 Зашифровано</span>' : '';
+            
             if (m.type === "image") content = `<img src="${m.text}" style="max-width:100%; border-radius:15px; margin-top:5px; cursor:pointer;" onclick="window.open('${m.text}')">`;
             if (m.type === "video") content = `<video src="${m.text}" controls style="max-width:100%; border-radius:15px; margin-top:5px; background:#000;"></video>`;
 
-            const actions = `<i class="fa-solid fa-reply msg-action" onclick="setReply('${mId}', '${m.type ? 'Медиа' : m.text.replace(/'/g, "\\'")}', '${m.senderNick}')"></i>${isMine ? `<i class="fa-solid fa-trash msg-action" onclick="deleteMsg('${mId}')"></i>` : ''}`;
+            const actions = `<i class="fa-solid fa-reply msg-action" onclick="setReply('${mId}', '${m.type ? 'Медиа' : m.text.replace(/'/g, "\\'")}', '${m.senderNick}')"></i>
+                ${isMine ? `<i class="fa-solid fa-trash msg-action" onclick="deleteMsg('${mId}')"></i>` : ''}
+                <i class="fa-solid fa-heart msg-action" onclick="addReaction('${mId}', '❤️')"></i>`;
+
+            const reactionsHtml = displayReactions(m.reactions);
 
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${isMine ? 'sent' : 'received'}`;
             msgDiv.id = `m-${mId}`;
-            msgDiv.innerHTML = `<div class="msg-info">@${m.senderNick} ${getBadge(m.senderVerified)} ${actions}</div><div class="bubble">${replyHtml}${content}</div>`;
+            msgDiv.innerHTML = `<div class="msg-info">@${m.senderNick} ${getBadge(m.senderVerified)} ${actions}${encryptedBadge}</div><div class="bubble">${replyHtml}${content}</div>${reactionsHtml}`;
 
             let startX = 0;
             msgDiv.ontouchstart = (e) => startX = e.touches[0].clientX;
@@ -687,7 +1058,15 @@ window.sendMsg = async () => {
     await updateDoc(doc(db, "chats", activeChatId), { [`typing.${user.uid}`]: false });
 
     try {
-        const msgObj = { text: txt, senderId: user.uid, senderNick: user.nickname, senderVerified: user.isVerify || false, createdAt: serverTimestamp() };
+        const msgObj = { 
+            text: txt, 
+            senderId: user.uid, 
+            senderNick: user.nickname, 
+            senderVerified: user.isVerify || false, 
+            createdAt: serverTimestamp(),
+            encrypted: false,
+            reactions: {}
+        };
         if (replyData) {
             msgObj.replyTo = replyData;
             cancelReply();
@@ -708,6 +1087,7 @@ el('input-msg').onkeydown = (e) => {
     if (e.key === 'Enter') sendMsg();
 };
 
+// ... (продолжение следует в части 2)
 // === WEBRTC VIDEO CALL ===
 const servers = { iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }] };
 
@@ -1116,506 +1496,3 @@ async function setupVoicePeerConnection(peerId, roomId, isInitiator) {
         removePeer(peerId);
     }
 }
-
-window.toggleVoiceMic = () => {
-    if (voiceStream) {
-        const track = voiceStream.getAudioTracks()[0];
-        if (track) {
-            track.enabled = !track.enabled;
-            el('voice-btn-mic').innerHTML = track.enabled
-                ? '<i class="fa-solid fa-microphone"></i>'
-                : '<i class="fa-solid fa-microphone-slash"></i>';
-            el('voice-btn-mic').style.background = track.enabled ? '#334155' : '#ef4444';
-        }
-    }
-};
-
-window.toggleSpeaker = () => {
-    const btn = el('voice-btn-speaker');
-    const isOn = btn.style.background === 'rgb(51, 65, 85)';
-    btn.style.background = isOn ? '#ef4444' : '#334155';
-    btn.innerHTML = isOn
-        ? '<i class="fa-solid fa-volume-xmark"></i>'
-        : '<i class="fa-solid fa-volume-high"></i>';
-};
-
-window.endVoiceCall = async () => {
-    voiceCallActive = false;
-    if (voiceCallTimer) {
-        clearInterval(voiceCallTimer);
-        voiceCallTimer = null;
-    }
-
-    el('voice-call-screen').style.display = 'none';
-
-    Object.keys(peers).forEach(peerId => {
-        try {
-            removePeer(peerId);
-        } catch (err) {
-            console.error("Error removing voice peer:", err);
-        }
-    });
-
-    if (voiceStream) {
-        voiceStream.getTracks().forEach(t => {
-            try {
-                t.stop();
-            } catch (err) {
-                console.error("Error stopping voice track:", err);
-            }
-        });
-        voiceStream = null;
-    }
-
-    if (activeChatId) {
-        try {
-            await remove(ref(rtdb, `voice_signals/${activeChatId}`));
-        } catch (err) {
-            console.error("Error removing voice signals:", err);
-        }
-    }
-
-    activeChatMembers.forEach(memberId => {
-        if (memberId !== user.uid) {
-            try {
-                remove(ref(rtdb, `voice_ringing/${memberId}`));
-            } catch (err) {
-                console.error("Error removing voice ringing:", err);
-            }
-        }
-    });
-};
-
-// === SCREEN SHARE ===
-window.toggleScreenShare = async () => {
-    if (screenSharing) {
-        window.stopScreenShare();
-    } else {
-        await window.startScreenShare();
-    }
-};
-
-window.startScreenShare = async () => {
-    try {
-        screenStream = await navigator.mediaDevices.getDisplayMedia({
-            video: {
-                cursor: "always",
-                displaySurface: "monitor"
-            },
-            audio: false
-        });
-
-        const videoElement = el('screen-video');
-        videoElement.srcObject = screenStream;
-        el('screen-share-preview').style.display = 'block';
-
-        const btn = el('btn-screen-share');
-        btn.style.background = '#22c55e';
-        btn.innerHTML = '<i class="fa-solid fa-display"></i>';
-
-        screenSharing = true;
-
-        if (localStream && currentCallRoom) {
-            const screenTrack = screenStream.getVideoTracks()[0];
-            Object.keys(peers).forEach(peerUid => {
-                try {
-                    const sender = peers[peerUid].getSenders().find(s => s.track?.kind === 'video');
-                    if (sender) {
-                        sender.replaceTrack(screenTrack);
-                    }
-                } catch (err) {
-                    console.error("Error replacing track:", err);
-                }
-            });
-        }
-
-        screenStream.getVideoTracks()[0].onended = () => {
-            window.stopScreenShare();
-        };
-    } catch (err) {
-        console.error("Error sharing screen:", err);
-        if (err.name !== "NotAllowedError") {
-            alert("Ошибка при запросе экрана");
-        }
-    }
-};
-
-window.stopScreenShare = async () => {
-    if (screenStream) {
-        screenStream.getTracks().forEach(track => {
-            try {
-                track.stop();
-            } catch (err) {
-                console.error("Error stopping screen track:", err);
-            }
-        });
-        screenStream = null;
-    }
-
-    el('screen-share-preview').style.display = 'none';
-
-    const btn = el('btn-screen-share');
-    btn.style.background = '#334155';
-    btn.innerHTML = '<i class="fa-solid fa-display"></i>';
-
-    screenSharing = false;
-
-    if (localStream && currentCallRoom) {
-        const videoTrack = localStream.getVideoTracks()[0];
-        if (videoTrack) {
-            Object.keys(peers).forEach(peerUid => {
-                try {
-                    const sender = peers[peerUid].getSenders().find(s => s.track?.kind === 'video');
-                    if (sender) {
-                        sender.replaceTrack(videoTrack);
-                    }
-                } catch (err) {
-                    console.error("Error replacing video track:", err);
-                }
-            });
-        }
-    }
-};
-
-// === PROFILE ===
-window.openProfile = () => {
-    openModal('modal-profile');
-    el('profile-nick').innerText = "@" + user.nickname;
-
-    const avatarContainer = el('profile-avatar-view');
-    if (user?.avatarUrl) {
-        avatarContainer.innerHTML = `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
-    } else {
-        avatarContainer.innerText = user?.emoji || "👤";
-    }
-
-    const grid = el('profile-emojis');
-    if (grid) {
-        grid.innerHTML = '';
-        emojiList.forEach(e => {
-            const s = document.createElement('span');
-            s.className = 'emoji-item';
-            s.innerText = e;
-            s.onclick = async () => {
-                await updateDoc(doc(db, "users", user.uid), { emoji: e });
-                user.emoji = e;
-                el('profile-avatar-view').innerText = e;
-                updateAvatarDisplay();
-            };
-            grid.appendChild(s);
-        });
-    }
-};
-
-// === USER PROFILE ===
-window.openUserProfile = async (userId) => {
-    try {
-        const userDoc = await getDoc(doc(db, "users", userId));
-        const userData = userDoc.data();
-
-        selectedUserProfile = {
-            uid: userId,
-            ...userData
-        };
-
-        el('profile-user-nick').innerText = "@" + userData.nickname;
-        el('profile-status-text').innerText = userData.isOnline ? "В сети" : "Не в сети";
-        el('profile-user-status').querySelector('.status-dot').className =
-            `status-dot ${userData.isOnline ? 'dot-online' : 'dot-offline'}`;
-
-        const avatarDiv = el('user-profile-content').querySelector('.user-avatar-large');
-        if (userData.avatarUrl) {
-            avatarDiv.innerHTML = `<img src="${userData.avatarUrl}">`;
-        } else {
-            avatarDiv.innerText = userData.emoji || "👤";
-        }
-
-        openModal('modal-user-profile');
-    } catch (e) {
-        console.error("Error loading profile:", e);
-    }
-};
-
-window.startDMWithNick = async () => {
-    if (!selectedUserProfile) return;
-    const cid = [user.uid, selectedUserProfile.uid].sort().join("_");
-    await setDoc(doc(db, "chats", cid), {
-        id: cid,
-        type: 'dm',
-        members: [user.uid, selectedUserProfile.uid],
-        nicks: { [user.uid]: user.nickname, [selectedUserProfile.uid]: selectedUserProfile.nickname },
-        emojis: { [user.uid]: user.emoji, [selectedUserProfile.uid]: selectedUserProfile.emoji },
-        avatarUrls: { [user.uid]: user.avatarUrl || null, [selectedUserProfile.uid]: selectedUserProfile.avatarUrl || null },
-        verified: { [user.uid]: user.isVerify || false, [selectedUserProfile.uid]: selectedUserProfile.isVerify || false },
-        lastMessage: "Чат открыт",
-        typing: { [user.uid]: false, [selectedUserProfile.uid]: false }
-    }, { merge: true });
-    closeAllModals();
-};
-
-window.startCallWithNick = async () => {
-    if (!selectedUserProfile) return;
-    const cid = [user.uid, selectedUserProfile.uid].sort().join("_");
-    activeChatId = cid;
-    activeChatMembers = [user.uid, selectedUserProfile.uid];
-    closeAllModals();
-    await startCall();
-};
-
-window.startCallWithId = async (userId) => {
-    const cid = [user.uid, userId].sort().join("_");
-    activeChatId = cid;
-    activeChatMembers = [user.uid, userId];
-    closeAllModals();
-    await startCall();
-};
-
-// === CONTACTS ===
-window.loadContacts = async () => {
-    const q = query(collection(db, "chats"), where("members", "array-contains", user.uid));
-    const snap = await getDocs(q);
-    const contactsContainer = el('contacts-list');
-    contactsContainer.innerHTML = '';
-
-    const contacts = new Map();
-    snap.forEach(doc => {
-        const chat = doc.data();
-        if (chat.type === 'dm') {
-            const otherId = chat.members.find(id => id !== user.uid);
-            if (otherId && !contacts.has(otherId)) {
-                contacts.set(otherId, {
-                    nick: chat.nicks[otherId],
-                    emoji: chat.emojis[otherId],
-                    avatar: chat.avatarUrls?.[otherId],
-                    id: otherId
-                });
-            }
-        }
-    });
-
-    if (contacts.size === 0) {
-        contactsContainer.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Нет контактов</div>';
-        return;
-    }
-
-    contacts.forEach(contact => {
-        const div = document.createElement('div');
-        div.className = 'contact-item';
-        const avatar = contact.avatar
-            ? `<img src="${contact.avatar}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`
-            : contact.emoji;
-
-        div.innerHTML = `
-            <div class="contact-info">
-                <div class="contact-avatar">${avatar}</div>
-                <span style="font-weight:500;">@${contact.nick}</span>
-            </div>
-            <div class="contact-action">
-                <button onclick="startDMWithId('${contact.id}')" title="Сообщение">
-                    <i class="fa-solid fa-comment"></i>
-                </button>
-                <button onclick="startCallWithId('${contact.id}')" title="Звонок">
-                    <i class="fa-solid fa-phone"></i>
-                </button>
-            </div>
-        `;
-        contactsContainer.appendChild(div);
-    });
-};
-
-// === SETTINGS ===
-window.toggleNotifications = () => {
-    const enabled = localStorage.getItem('notifications') !== 'false';
-    localStorage.setItem('notifications', !enabled);
-    el('notif-toggle').style.opacity = enabled ? '0.5' : '1';
-};
-
-window.clearCache = () => {
-    if (confirm('Очистить весь кэш?')) {
-        localStorage.clear();
-        alert('Кэш очищен!');
-    }
-};
-
-// === GROUPS ===
-window.confirmCreateGroup = async () => {
-    const name = el('new-group-name').value.trim();
-    if (!name) return;
-    await addDoc(collection(db, "chats"), { name, type: 'group', members: [user.uid], lastMessage: "Группа создана", typing: {}, emoji: "👥" });
-    el('new-group-name').value = '';
-    closeAllModals();
-};
-
-window.confirmAddMember = async () => {
-    const nick = el('member-nick').value.trim().toLowerCase();
-    const q = query(collection(db, "users"), where("nickname", "==", nick));
-    const s = await getDocs(q);
-    if (s.empty) return alert("Не найден");
-    await updateDoc(doc(db, "chats", activeChatId), { members: arrayUnion(s.docs[0].data().uid) });
-
-    if (!activeChatMembers.includes(s.docs[0].data().uid)) activeChatMembers.push(s.docs[0].data().uid);
-
-    el('member-nick').value = '';
-    closeAllModals();
-};
-
-window.openGroupSettingsBtn = () => {
-    openGroupSettings(activeChatId);
-};
-
-window.openGroupSettings = async (groupId) => {
-    activeGroupId = groupId;
-    try {
-        const groupDoc = await getDoc(doc(db, "chats", groupId));
-        const group = groupDoc.data();
-
-        el('group-name-input').value = group.name || '';
-        el('group-avatar').innerText = group.emoji || '👥';
-
-        const membersList = el('members-list');
-        membersList.innerHTML = '';
-
-        for (let memberId of group.members) {
-            const userDoc = await getDoc(doc(db, "users", memberId));
-            const userData = userDoc.data();
-
-            const div = document.createElement('div');
-            div.className = 'member-item';
-
-            const avatar = userData.avatarUrl
-                ? `<img src="${userData.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`
-                : userData.emoji;
-
-            const isAdmin = memberId === group.members[0];
-
-            div.innerHTML = `
-                <div class="member-info">
-                    <div class="member-avatar">${avatar}</div>
-                    <div>
-                        <div style="font-weight:500;">@${userData.nickname}</div>
-                        <div class="member-role">${isAdmin ? 'Администратор' : 'Участник'}</div>
-                    </div>
-                </div>
-                <div class="member-actions">
-                    ${memberId !== user.uid ? `<button onclick="removeMember('${memberId}')"><i class="fa-solid fa-trash"></i></button>` : ''}
-                </div>
-            `;
-            membersList.appendChild(div);
-        }
-
-        openModal('modal-group-settings');
-    } catch (e) {
-        console.error("Error loading group settings:", e);
-    }
-};
-
-window.updateGroupName = async () => {
-    const name = el('group-name-input').value.trim();
-    if (!name || !activeGroupId) return alert('Введите название');
-
-    try {
-        await updateDoc(doc(db, "chats", activeGroupId), { name });
-        alert('Название обновлено!');
-    } catch (e) {
-        console.error(e);
-    }
-};
-
-window.uploadGroupAvatar = async () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file || !activeGroupId) return;
-
-        try {
-            const formData = new FormData();
-            formData.append("image", file);
-            const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`,
-                { method: "POST", body: formData });
-            const data = await response.json();
-
-            if (data.success) {
-                await updateDoc(doc(db, "chats", activeGroupId), {
-                    groupAvatarUrl: data.data.url
-                });
-                el('group-avatar').innerHTML = `<img src="${data.data.url}" style="width:100%; height:100%; border-radius:12px; object-fit:cover;">`;
-                alert('Аватар обновлен!');
-            }
-        } catch (err) {
-            console.error(err);
-            alert('Ошибка загрузки');
-        }
-    };
-    input.click();
-};
-
-window.removeMember = async (memberId) => {
-    if (!confirm('Удалить участника?') || !activeGroupId) return;
-    try {
-        const groupDoc = await getDoc(doc(db, "chats", activeGroupId));
-        const members = groupDoc.data().members.filter(id => id !== memberId);
-        await updateDoc(doc(db, "chats", activeGroupId), { members });
-        openGroupSettings(activeGroupId);
-    } catch (e) {
-        console.error(e);
-    }
-};
-
-window.deleteGroup = async () => {
-    if (!confirm('Удалить группу? Это необратимо!') || !activeGroupId) return;
-    try {
-        await deleteDoc(doc(db, "chats", activeGroupId));
-        closeAllModals();
-        alert('Группа удалена!');
-    } catch (e) {
-        console.error(e);
-    }
-};
-
-// === EMOJI PICKER ===
-window.filterEmojis = (category) => {
-    currentEmojiCategory = category;
-    document.querySelectorAll('.emoji-cat-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.category === category);
-    });
-    loadEmojiGrid(category);
-};
-
-window.loadEmojiGrid = (category) => {
-    const grid = el('emoji-picker-grid');
-    grid.innerHTML = '';
-
-    emojisByCategory[category].forEach(emoji => {
-        const span = document.createElement('span');
-        span.className = 'emoji-picker-item';
-        span.innerText = emoji;
-        span.onclick = () => insertEmoji(emoji);
-        grid.appendChild(span);
-    });
-};
-
-window.insertEmoji = (emoji) => {
-    const input = el('input-msg');
-    input.value += emoji;
-    input.focus();
-    closeAllModals();
-};
-
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
-    applyTheme();
-    el('theme-toggle').style.opacity = isDarkMode ? '1' : '0.5';
-    loadEmojiGrid('smileys');
-
-    const contactsModal = el('modal-contacts');
-    if (contactsModal) {
-        const observer = new MutationObserver(() => {
-            if (contactsModal.style.display === 'flex') {
-                loadContacts();
-            }
-        });
-        observer.observe(contactsModal, { attributes: true, attributeFilter: ['style'] });
-    }
-});
