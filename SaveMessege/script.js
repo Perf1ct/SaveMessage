@@ -1,13 +1,28 @@
+// Full app script.js (Firebase config set to your venta-band project)
+// Uses modular Firebase v10.8.1
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, where, orderBy, serverTimestamp, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, arrayUnion, limit } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-import { getDatabase, ref, set, onChildAdded, onValue, push, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+import {
+  getFirestore, collection, addDoc, onSnapshot, query, where, orderBy,
+  serverTimestamp, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc,
+  arrayUnion, limit
+} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import {
+  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  onAuthStateChanged, signOut
+} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import {
+  getDatabase, ref, set, onChildAdded, onValue, push, remove, onDisconnect
+} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyDShZqoIBlgUBs-kwS_BoqF6xnnad2dOFU",
-    authDomain: "savemessage-d633c.firebaseapp.com",
-    projectId: "savemessage-d633c",
-    databaseURL: "https://savemessage-d633c-default-rtdb.europe-west1.firebasedatabase.app"
+  apiKey: "AIzaSyAcMsgBVcDaNVaT50QBLG0CHEI8UUebeW4",
+  authDomain: "venta-band.firebaseapp.com",
+  databaseURL: "https://venta-band-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "venta-band",
+  storageBucket: "venta-band.firebasestorage.app",
+  messagingSenderId: "176884444601",
+  appId: "1:176884444601:web:b13ab191807b9151549a68",
+  measurementId: "G-W7DNC8JPS3"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -125,6 +140,7 @@ function playNotificationSound() {
 // === NEW MESSAGES ===
 function scrollToBottom() {
     const msgBox = el('ui-msgs');
+    if (!msgBox) return;
     msgBox.scrollTop = msgBox.scrollHeight;
     hideNewMessagesIndicator();
 }
@@ -132,6 +148,7 @@ function scrollToBottom() {
 function showNewMessagesIndicator(count) {
     const btn = el('new-messages-btn');
     const countSpan = el('new-msg-count');
+    if (!btn || !countSpan) return;
     if (count > 0) {
         countSpan.innerText = count;
         btn.style.display = 'flex';
@@ -140,17 +157,20 @@ function showNewMessagesIndicator(count) {
 }
 
 function hideNewMessagesIndicator() {
-    el('new-messages-btn').style.display = 'none';
+    const btn = el('new-messages-btn');
+    if (btn) btn.style.display = 'none';
     newMessagesCount = 0;
 }
 
-el('ui-msgs').addEventListener('scroll', function() {
-    const msgBox = el('ui-msgs');
-    isScrolledToBottom = msgBox.scrollHeight - msgBox.scrollTop - msgBox.clientHeight < 50;
-    if (isScrolledToBottom) {
-        hideNewMessagesIndicator();
-    }
-});
+if (el('ui-msgs')) {
+    el('ui-msgs').addEventListener('scroll', function() {
+        const msgBox = el('ui-msgs');
+        isScrolledToBottom = msgBox.scrollHeight - msgBox.scrollTop - msgBox.clientHeight < 50;
+        if (isScrolledToBottom) {
+            hideNewMessagesIndicator();
+        }
+    });
+}
 
 // === ONLINE STATUS ===
 async function setOnlineStatus(status) {
@@ -185,21 +205,26 @@ document.addEventListener('visibilitychange', async () => {
 window.addEventListener('beforeunload', () => setOnlineStatus(false));
 window.addEventListener('unload', () => setOnlineStatus(false));
 
-el('input-msg').addEventListener('input', async () => {
-    if (!activeChatId || !user) return;
-    try {
-        await updateDoc(doc(db, "chats", activeChatId), { [`typing.${user.uid}`]: true });
-        clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(async () => {
-            await updateDoc(doc(db, "chats", activeChatId), { [`typing.${user.uid}`]: false });
-        }, 2000);
-    } catch (e) {
-        console.error("Error updating typing status:", e);
-    }
-});
+if (el('input-msg')) {
+    el('input-msg').addEventListener('input', async () => {
+        if (!activeChatId || !user) return;
+        try {
+            await updateDoc(doc(db, "chats", activeChatId), { [`typing.${user.uid}`]: true });
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(async () => {
+                await updateDoc(doc(db, "chats", activeChatId), { [`typing.${user.uid}`]: false });
+            }, 2000);
+        } catch (e) {
+            console.error("Error updating typing status:", e);
+        }
+    });
+}
 
 // === UI FUNCTIONS ===
-window.openModal = (id) => el(id).style.display = 'flex';
+window.openModal = (id) => {
+    const node = el(id);
+    if (node) node.style.display = 'flex';
+};
 window.closeAllModals = () => {
     document.querySelectorAll('.modal-overlay').forEach(m => {
         if (m.id !== 'auth-screen' && m.id !== 'modal-incoming-call') m.style.display = 'none';
@@ -216,16 +241,20 @@ window.deleteMsg = async (mId) => {
 };
 
 window.setReply = (mId, text, nick) => {
-    replyData = { mId, text: text.substring(0, 50), nick };
-    el('reply-nick').innerText = "@" + nick;
-    el('reply-text').innerText = text;
-    el('reply-bar').style.display = 'flex';
-    el('input-msg').focus();
+    replyData = { mId, text: (text || '').substring(0, 50), nick };
+    const rn = el('reply-nick');
+    const rt = el('reply-text');
+    if (rn) rn.innerText = "@" + nick;
+    if (rt) rt.innerText = text;
+    const rb = el('reply-bar');
+    if (rb) rb.style.display = 'flex';
+    if (el('input-msg')) el('input-msg').focus();
 };
 
 window.cancelReply = () => {
     replyData = null;
-    el('reply-bar').style.display = 'none';
+    const rb = el('reply-bar');
+    if (rb) rb.style.display = 'none';
 };
 
 // === PINNED MESSAGES ===
@@ -312,8 +341,8 @@ function displayReactions(reactionsData) {
 
 // === MESSAGE SEARCH ===
 window.searchMessages = async () => {
-    const text = el('search-input').value.trim().toLowerCase();
-    const date = el('search-date').value;
+    const text = el('search-input')?.value.trim().toLowerCase() || '';
+    const date = el('search-date')?.value || '';
     
     if (!text && !date) return;
     
@@ -327,16 +356,16 @@ window.searchMessages = async () => {
         const snap = await getDocs(q);
         searchResults = [];
         
-        snap.forEach(doc => {
-            const msg = doc.data();
-            const msgText = msg.text.toLowerCase();
+        snap.forEach(docSnap => {
+            const msg = docSnap.data();
+            const msgText = (msg.text || '').toLowerCase();
             
             const matchesText = text === '' || msgText.includes(text);
             const matchesDate = date === '' || 
                 (msg.createdAt && msg.createdAt.toDate().toLocaleDateString() === new Date(date).toLocaleDateString());
             
             if (matchesText && matchesDate) {
-                searchResults.push({ id: doc.id, ...msg });
+                searchResults.push({ id: docSnap.id, ...msg });
             }
         });
         
@@ -361,7 +390,7 @@ function displaySearchResults() {
         div.className = 'search-result-item';
         div.innerHTML = `
             <div style="font-weight:600; font-size:12px;">@${msg.senderNick}</div>
-            <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">${msg.text.substring(0, 100)}</div>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">${(msg.text || '').substring(0, 100)}</div>
         `;
         div.onclick = () => {
             const msgEl = el(`m-${msg.id}`);
@@ -378,7 +407,7 @@ window.exportChats = async () => {
         const snap = await getDocs(q);
         
         let data = {
-            user: user.nickname,
+            user: user?.nickname || '',
             exportDate: new Date().toISOString(),
             chats: []
         };
@@ -428,7 +457,7 @@ if (importFileInput) {
         reader.onload = async (event) => {
             try {
                 const data = JSON.parse(event.target.result);
-                alert(`✅ Импортировано ${data.chats.length} чатов. Синхронизация началась.`);
+                alert(`✅ Импортировано ${data.chats?.length || 0} чатов. Синхронизация началась.`);
                 // Полная синхронизация требует дополнительной логики
             } catch (err) {
                 alert('❌ Ошибка при импорте');
@@ -499,7 +528,7 @@ window.loadStickers = () => {
         span.className = 'sticker-item';
         span.innerText = sticker;
         span.onclick = () => {
-            el('input-msg').value += sticker;
+            if (el('input-msg')) el('input-msg').value += sticker;
             closeAllModals();
         };
         grid.appendChild(span);
@@ -507,49 +536,53 @@ window.loadStickers = () => {
 };
 
 // === AUTHENTICATION ===
-el('auth-toggle').onclick = () => {
-    const isReg = el('reg-nick').style.display === "none";
-    el('reg-nick').style.display = isReg ? "block" : "none";
-    el('auth-title').innerText = isReg ? "Регистрация" : "SafeMessage Pro";
-    el('auth-toggle').innerText = isReg ? "Есть аккаунт? Войти" : "Создать аккаунт";
-};
+if (el('auth-toggle')) {
+    el('auth-toggle').onclick = () => {
+        const isReg = el('reg-nick').style.display === "none";
+        el('reg-nick').style.display = isReg ? "block" : "none";
+        el('auth-title').innerText = isReg ? "Регистрация" : "SafeMessage Pro";
+        el('auth-toggle').innerText = isReg ? "Есть аккаунт? Войти" : "Создать аккаунт";
+    };
+}
 
-el('btn-auth').onclick = async () => {
-    const email = el('auth-email').value.trim();
-    const pass = el('auth-pass').value.trim();
-    const nick = el('reg-nick').value.trim().toLowerCase();
-    if (!email || !pass) return alert("Заполни поля!");
+if (el('btn-auth')) {
+    el('btn-auth').onclick = async () => {
+        const email = el('auth-email').value.trim();
+        const pass = el('auth-pass').value.trim();
+        const nick = el('reg-nick').value.trim().toLowerCase();
+        if (!email || !pass) return alert("Заполни поля!");
 
-    try {
-        if (el('reg-nick').style.display !== "none") {
-            if (!nick) return alert("Введите ник");
-            const q = query(collection(db, "users"), where("nickname", "==", nick));
-            if (!(await getDocs(q)).empty) return alert("Ник занят!");
-            const res = await createUserWithEmailAndPassword(auth, email, pass);
-            
-            await setDoc(doc(db, "users", res.user.uid), {
-                uid: res.user.uid,
-                nickname: nick,
-                emoji: "👤",
-                avatarUrl: null,
-                isVerify: false,
-                isOnline: true,
-                lastSeen: serverTimestamp(),
-                advancedStatus: 'В сети'
-            });
-        } else {
-            await signInWithEmailAndPassword(auth, email, pass);
+        try {
+            if (el('reg-nick').style.display !== "none") {
+                if (!nick) return alert("Введите ник");
+                const q = query(collection(db, "users"), where("nickname", "==", nick));
+                if (!(await getDocs(q)).empty) return alert("Ник занят!");
+                const res = await createUserWithEmailAndPassword(auth, email, pass);
+                
+                await setDoc(doc(db, "users", res.user.uid), {
+                    uid: res.user.uid,
+                    nickname: nick,
+                    emoji: "👤",
+                    avatarUrl: null,
+                    isVerify: false,
+                    isOnline: true,
+                    lastSeen: serverTimestamp(),
+                    advancedStatus: 'В сети'
+                });
+            } else {
+                await signInWithEmailAndPassword(auth, email, pass);
+            }
+        } catch (e) {
+            alert(e.message || 'Ошибка аутентификации');
         }
-    } catch (e) {
-        alert(e.message);
-    }
-};
+    };
+}
 
 onAuthStateChanged(auth, async (u) => {
     if (u) {
         const d = await getDoc(doc(db, "users", u.uid));
         user = d.data();
-        el('auth-screen').style.display = 'none';
+        if (el('auth-screen')) el('auth-screen').style.display = 'none';
         updateAvatarDisplay();
         setupPresence();
         loadChats();
@@ -559,6 +592,7 @@ onAuthStateChanged(auth, async (u) => {
         loadStickers();
     } else {
         user = null;
+        if (el('auth-screen')) el('auth-screen').style.display = 'flex';
     }
 });
 
@@ -620,45 +654,51 @@ function hideUploadProgress() {
 }
 
 // === FILE UPLOAD ===
-el('file-input').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file || !activeChatId) return;
+if (el('file-input')) {
+    el('file-input').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file || !activeChatId) return;
 
-    const fileType = file.type;
-    const fileName = file.name;
-    const fileSize = file.size;
+        const fileType = file.type;
+        const fileName = file.name;
+        const fileSize = file.size;
 
-    if (fileSize > 200 * 1024 * 1024) {
-        alert('❌ Файл слишком большой (макс 200MB)');
-        return;
-    }
-
-    const inputField = el('input-msg');
-    const originalPlaceholder = inputField.placeholder;
-    inputField.placeholder = `⏳ Загрузка ${fileName}...`;
-    inputField.disabled = true;
-
-    try {
-        let url;
-        if (fileType.startsWith('video/')) {
-            url = await uploadVideoToCatbox(file);
-        } else if (fileType.startsWith('image/')) {
-            url = await uploadImageToImgBB(file);
-        } else {
-            alert('⚠️ Поддерживаются только видео и изображения');
+        if (fileSize > 200 * 1024 * 1024) {
+            alert('❌ Файл слишком большой (макс 200MB)');
             return;
         }
-        await sendMediaMsg(url, fileType.includes('image') ? 'image' : 'video', fileName);
-    } catch (err) {
-        alert("❌ Ошибка загрузки: " + err.message);
-        console.error(err);
-    } finally {
-        inputField.placeholder = originalPlaceholder;
-        inputField.disabled = false;
-        e.target.value = "";
-        hideUploadProgress();
-    }
-});
+
+        const inputField = el('input-msg');
+        const originalPlaceholder = inputField ? inputField.placeholder : '';
+        if (inputField) {
+            inputField.placeholder = `⏳ Загрузка ${fileName}...`;
+            inputField.disabled = true;
+        }
+
+        try {
+            let url;
+            if (fileType.startsWith('video/')) {
+                url = await uploadVideoToCatbox(file);
+            } else if (fileType.startsWith('image/')) {
+                url = await uploadImageToImgBB(file);
+            } else {
+                alert('⚠️ Поддерживаются только видео и изображения');
+                return;
+            }
+            await sendMediaMsg(url, fileType.includes('image') ? 'image' : 'video', fileName);
+        } catch (err) {
+            alert("❌ Ошибка загрузки: " + (err.message || err));
+            console.error(err);
+        } finally {
+            if (inputField) {
+                inputField.placeholder = originalPlaceholder;
+                inputField.disabled = false;
+            }
+            e.target.value = "";
+            hideUploadProgress();
+        }
+    });
+}
 
 async function uploadVideoToCatbox(file) {
     return new Promise((resolve, reject) => {
@@ -770,6 +810,7 @@ async function sendMediaMsg(url, type, fileName = '') {
 
 // === AVATAR SYSTEM ===
 function updateAvatarDisplay() {
+    if (!el('my-avatar')) return;
     if (user?.avatarUrl) {
         el('my-avatar').innerHTML = `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
     } else {
@@ -777,11 +818,11 @@ function updateAvatarDisplay() {
     }
 }
 
-function getAvatarHtml(user) {
-    if (user?.avatarUrl) {
-        return `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+function getAvatarHtml(userObj) {
+    if (userObj?.avatarUrl) {
+        return `<img src="${userObj.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
     }
-    return user?.emoji || "👤";
+    return userObj?.emoji || "👤";
 }
 
 window.uploadAvatarPhoto = async () => {
@@ -880,6 +921,7 @@ function loadChats() {
     const q = query(collection(db, "chats"), where("members", "array-contains", user.uid), orderBy("createdAt", "desc"));
     onSnapshot(q, (snap) => {
         const list = el('ui-chats');
+        if (!list) return;
         list.innerHTML = '';
         snap.forEach(dSnap => {
             const c = dSnap.data();
@@ -973,6 +1015,7 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
     const q = query(collection(db, `chats/${id}/messages`), orderBy("createdAt", "asc"), limit(100));
     unsubMsgs = onSnapshot(q, (snap) => {
         const box = el('ui-msgs');
+        if (!box) return;
         const wasAtBottom = isScrolledToBottom;
 
         box.innerHTML = '';
@@ -982,14 +1025,14 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             const m = mDoc.data();
             const mId = mDoc.id;
             const isMine = m.senderId === user.uid;
-            let replyHtml = m.replyTo ? `<div class="reply-quote" onclick="document.getElementById('m-${m.replyTo.mId}').scrollIntoView({behavior:'smooth'})"><b>@${m.replyTo.nick}</b><br>${m.replyTo.text.substring(0, 30)}</div>` : '';
+            let replyHtml = m.replyTo ? `<div class="reply-quote" onclick="document.getElementById('m-${m.replyTo.mId}')?.scrollIntoView({behavior:'smooth'})"><b>@${m.replyTo.nick}</b><br>${(m.replyTo.text || '').substring(0,80)}</div>` : '';
 
-            let content = m.text;
+            let content = m.text || '';
             
             if (m.type === "image") content = `<img src="${m.text}" style="max-width:100%; border-radius:15px; margin-top:5px; cursor:pointer;" onclick="window.open('${m.text}')">`;
             if (m.type === "video") content = `<video src="${m.text}" controls style="max-width:100%; border-radius:15px; margin-top:5px; background:#000;"></video>`;
 
-            const actions = `<i class="fa-solid fa-reply msg-action" onclick="setReply('${mId}', '${m.type ? 'Медиа' : m.text.replace(/'/g, "\\'")}', '${m.senderNick}')"></i>
+            const actions = `<i class="fa-solid fa-reply msg-action" onclick="setReply('${mId}', '${(m.type ? 'Медиа' : (m.text || '').replace(/'/g, "\\'"))}', '${m.senderNick || ''}')"></i>
                 ${isMine ? `<i class="fa-solid fa-trash msg-action" onclick="deleteMsg('${mId}')"></i>` : ''}
                 <i class="fa-solid fa-heart msg-action" onclick="addReaction('${mId}', '❤️')"></i>`;
 
@@ -999,7 +1042,7 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${isMine ? 'sent' : 'received'}`;
             msgDiv.id = `m-${mId}`;
-            msgDiv.innerHTML = `<div class="msg-info">@${m.senderNick} ${getBadge(m.senderVerified)} ${actions} ${isMine ? statusBadge : ''}</div><div class="bubble">${replyHtml}${content}</div>${reactionsHtml}`;
+            msgDiv.innerHTML = `<div class="msg-info">@${m.senderNick || 'user'} ${getBadge(m.senderVerified)} ${actions} ${isMine ? statusBadge : ''}</div><div class="bubble">${replyHtml}${content}</div>${reactionsHtml || ''}`;
 
             let startX = 0;
             msgDiv.ontouchstart = (e) => startX = e.touches[0].clientX;
@@ -1038,9 +1081,9 @@ window.closeChat = () => {
 
 window.sendMsg = async () => {
     const inp = el('input-msg');
-    const txt = inp.value.trim();
+    const txt = inp?.value.trim();
     if (!txt || !activeChatId) return;
-    inp.value = '';
+    if (inp) inp.value = '';
     await updateDoc(doc(db, "chats", activeChatId), { [`typing.${user.uid}`]: false });
 
     try {
@@ -1069,7 +1112,7 @@ window.sendMsg = async () => {
     }
 };
 
-el('input-msg').onkeydown = (e) => {
+if (el('input-msg')) el('input-msg').onkeydown = (e) => {
     if (e.key === 'Enter') sendMsg();
 };
 
@@ -1643,13 +1686,11 @@ window.stopScreenShare = async () => {
 // === PROFILE ===
 window.openProfile = () => {
     openModal('modal-profile');
-    el('profile-nick').innerText = "@" + user.nickname;
-
+    if (el('profile-nick')) el('profile-nick').innerText = "@" + (user?.nickname || '');
     const avatarContainer = el('profile-avatar-view');
-    if (user?.avatarUrl) {
-        avatarContainer.innerHTML = `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
-    } else {
-        avatarContainer.innerText = user?.emoji || "👤";
+    if (avatarContainer) {
+        if (user?.avatarUrl) avatarContainer.innerHTML = `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+        else avatarContainer.innerText = user?.emoji || "👤";
     }
 
     const grid = el('profile-emojis');
@@ -1914,6 +1955,7 @@ window.loadEmojiGrid = (category) => {
 
 window.insertEmoji = (emoji) => {
     const input = el('input-msg');
+    if (!input) return;
     input.value += emoji;
     input.focus();
     closeAllModals();
