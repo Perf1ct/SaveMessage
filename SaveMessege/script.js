@@ -1025,7 +1025,7 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             const m = mDoc.data();
             const mId = mDoc.id;
             const isMine = m.senderId === user.uid;
-            let replyHtml = m.replyTo ? `<div class="reply-quote" onclick="document.getElementById('m-${m.replyTo.mId}')?.scrollIntoView({behavior:'smooth'})"><b>@${m.replyTo.nick}</b><br>${(m.replyTo.text || '').substring(0,80)}</div>` : '';
+            let replyHtml = m.replyTo ? `<div class="reply-quote" onclick="document.getElementById('m-${m.replyTo.mId}')?.scrollIntoView({behavior:'smooth'})"><b>@${m.replyTo.nick}</b><br>${(m.replyTo.text||'').substring(0,80)}</div>` : '';
 
             let content = m.text || '';
             
