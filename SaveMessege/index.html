@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#0f172a">
     <title>SafeMessage | Pro</title>
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/5968/5968756.png">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
@@ -26,6 +26,7 @@
             <input type="password" id="auth-pass" class="auth-input" placeholder="Пароль">
             <button class="primary-btn" id="btn-auth">Войти</button>
             <p id="auth-toggle" style="cursor:pointer; color:var(--primary); font-size:12px; margin-top:5px;">Создать аккаунт</p>
+            <!-- optional guest btn could be here -->
         </div>
     </div>
 
@@ -302,7 +303,7 @@
 
     <!-- MAIN APP -->
     <div class="app-container" id="app">
-        <aside class="sidebar">
+        <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px;">
                     <h2 style="font-size:19px;">Чаты</h2>
@@ -320,7 +321,7 @@
             <div class="chat-list" id="ui-chats"></div>
         </aside>
 
-        <main class="chat-area">
+        <main class="chat-area" id="chat-area">
             <div class="chat-header">
                 <i class="fa-solid fa-arrow-left" id="btn-back" onclick="closeChat()"></i>
                 <div class="avatar-wrap">
@@ -346,7 +347,7 @@
             </div>
 
             <div id="pinned-messages" class="pinned-messages"></div>
-            <div class="messages" id="ui-msgs"></div>
+            <div class="messages" id="ui-msgs" role="log" aria-live="polite"></div>
 
             <!-- NEW MESSAGES INDICATOR -->
             <div class="new-messages-indicator" id="new-messages-btn" onclick="scrollToBottom()" style="display:none;">
@@ -364,17 +365,17 @@
 
             <div class="input-bar">
                 <input type="file" id="file-input" style="display:none" accept="image/*, video/mp4, video/webm, image/gif, .pdf, .doc, .docx, .txt">
-                <button class="primary-btn" style="width:36px; background:transparent; margin:0; padding:0; flex-shrink:0;" onclick="document.getElementById('file-input').click()" title="Файл">
+                <button class="primary-btn icon-btn" title="Файл" onclick="document.getElementById('file-input').click()">
                     <i class="fa-solid fa-paperclip"></i>
                 </button>
-                <button class="primary-btn" style="width:36px; background:transparent; margin:0; padding:0; flex-shrink:0;" onclick="openModal('modal-stickers')" title="Стикеры">
+                <button class="primary-btn icon-btn" title="Стикеры" onclick="openModal('modal-stickers')">
                     <i class="fa-solid fa-face-grin-stars"></i>
                 </button>
-                <button class="primary-btn" style="width:36px; background:transparent; margin:0; padding:0; flex-shrink:0;" onclick="openModal('modal-emoji-picker')" title="Эмодзи">
+                <button class="primary-btn icon-btn" title="Эмодзи" onclick="openModal('modal-emoji-picker')">
                     <i class="fa-solid fa-face-smile"></i>
                 </button>
                 <input type="text" id="input-msg" class="msg-input" placeholder="Сообщение...">
-                <button class="primary-btn" style="width:44px; border-radius:50%; margin:0; padding:0; flex-shrink:0;" onclick="sendMsg()">
+                <button class="primary-btn send-btn" title="Отправить" onclick="sendMsg()">
                     <i class="fa-solid fa-paper-plane"></i>
                 </button>
             </div>
@@ -387,9 +388,13 @@
             <i class="fa-solid fa-sliders-h"></i>
             <span class="panel-label">Настройки</span>
         </button>
-        <button class="panel-btn" onclick="el('app').classList.toggle('show-chat')" title="Чаты">
+        <button class="panel-btn" onclick="document.getElementById('app').classList.toggle('show-chat')" title="Чаты">
             <i class="fa-solid fa-comments"></i>
             <span class="panel-label">Чаты</span>
+        </button>
+        <button class="panel-btn" onclick="openModal('modal-search')" title="Поиск">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <span class="panel-label">Поиск</span>
         </button>
     </div>
 
