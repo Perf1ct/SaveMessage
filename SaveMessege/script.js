@@ -331,7 +331,7 @@ function displayReactions(reactionsData) {
     let html = '<div class="message-reactions">';
     Object.entries(reactionsData).forEach(([emoji, users]) => {
         const count = Object.keys(users).length;
-        html += `<button class="reaction-button" onclick="addReaction('${activeChatId}', '${emoji}')" title="Нажми чтобы убрать">
+        html += `<button class="reaction-button" onclick="addReaction('${emoji}')" title="Нажми чтобы убрать">
             ${emoji} <span class="reaction-count">${count}</span>
         </button>`;
     });
@@ -1082,14 +1082,18 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             const m = mDoc.data();
             const mId = mDoc.id;
             const isMine = m.senderId === user.uid;
-            let replyHtml = m.replyTo ? `<div class="reply-quote" onclick="document.getElementById('m-${m.replyTo.mId}')?.scrollIntoView({behavior:'smooth'})"><b>@${m.replyTo.nick}</b><br>${(m.replyTo.text||'').substring(0,80)}</div>` : '';
+            let replyHtml = '';
+            if (m.replyTo) {
+                const r = m.replyTo;
+                replyHtml = `<div class="reply-quote" onclick="document.getElementById('m-${r.mId}')?.scrollIntoView({behavior:'smooth'})"><b>@${r.nick}</b><br>${(r.text || '').substring(0, 80)}</div>`;
+            }
 
             let content = m.text || '';
-            
             if (m.type === "image") content = `<img src="${m.text}" style="max-width:100%; border-radius:15px; margin-top:5px; cursor:pointer;" onclick="window.open('${m.text}')">`;
             if (m.type === "video") content = `<video src="${m.text}" controls style="max-width:100%; border-radius:15px; margin-top:5px; background:#000;"></video>`;
 
-            const actions = `<i class="fa-solid fa-reply msg-action" onclick="setReply('${mId}', '${(m.type ? 'Медиа' : (m.text || '').replace(/'/g, "\\'"))}', '${m.senderNick || ''}')"></i>
+            const safeText = (m.type ? 'Медиа' : (m.text || '').replace(/'/g, "\\'"));
+            const actions = `<i class="fa-solid fa-reply msg-action" onclick="setReply('${mId}', '${safeText}', '${m.senderNick || ''}')"></i>
                 ${isMine ? `<i class="fa-solid fa-trash msg-action" onclick="deleteMsg('${mId}')"></i>` : ''}
                 <i class="fa-solid fa-heart msg-action" onclick="addReaction('${mId}', '❤️')"></i>`;
 
@@ -1099,8 +1103,8 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${isMine ? 'sent' : 'received'}`;
             msgDiv.id = `m-${mId}`;
-            msgDiv.innerHTML = `<div class="msg-info">@${m.senderNick || 'user'} ${getBadge(m.senderVerified)} ${actions} ${isMine ? statusBadge : ''}</div><div class="bubble">${replyHtml}${content}</div>${reactionsHtml || ''}`;
-
+            msgDiv.innerHTML = `<div class="msg-info">@${m.senderNick || 'user'} ${getBadge(m.senderVerified)} ${actions} ${isMine ? statusBadge : ''}</div><div class="bubble">${replyHtml}${content}${reactionsHtml || ''}</div>`;
+            
             let startX = 0;
             msgDiv.ontouchstart = (e) => startX = e.touches[0].clientX;
             msgDiv.ontouchmove = (e) => {
@@ -1315,7 +1319,16 @@ async function setupPeerConnection(peerUid, roomId, isInitiator) {
                 vid.id = `vid-${peerUid}`;
                 vid.autoplay = true;
                 vid.playsInline = true;
-                el('video-grid').insertBefore(vid, el('local-video'));
+                const grid = el('video-grid') || el('video-grid') || el('video-grid'); // safe fallback
+                // insert before local video if available
+                const container = el('video-grid') || el('video-grid') || el('video-grid');
+                // if not found, append to video container
+                const videoGrid = el('video-grid') || el('video-grid') || el('video-grid');
+                // fallback to 'video-grid' not strictly present in HTML; try 'video-grid' or 'video-grid'
+                const videoContainer = el('video-grid') || el('video-grid') || el('video-grid');
+                // Best-effort: append to .video-container
+                const vc = document.querySelector('.video-container');
+                if (vc) vc.insertBefore(vid, el('local-video'));
             }
             if (e.streams && e.streams[0]) {
                 vid.srcObject = e.streams[0];
@@ -2157,6 +2170,17 @@ window.ensureMobileUI = () => {
   if (!appContainer) return;
   if (window.innerWidth <= 900) {
     appContainer.classList.remove('show-chat'); // show list by default on mobile
+    // show mobile bottom panel
+    const panel = el('mobile-panel');
+    if (panel) panel.style.display = 'flex';
+    // show back button only when a chat is open
+    const backBtn = el('btn-back');
+    if (backBtn) backBtn.style.display = appContainer.classList.contains('show-chat') ? 'block' : 'none';
+  } else {
+    const panel = el('mobile-panel');
+    if (panel) panel.style.display = 'none';
+    const backBtn = el('btn-back');
+    if (backBtn) backBtn.style.display = 'none';
   }
 };
 
@@ -2194,3 +2218,4 @@ if (backBtn) {
     }, 600);
   };
 })();
+
