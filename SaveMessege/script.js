@@ -8,7 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  onAuthStateChanged, signOut
+  onAuthStateChanged, signOut, signInAnonymously
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import {
   getDatabase, ref, set, onChildAdded, onValue, push, remove, onDisconnect
@@ -556,7 +556,11 @@ if (el('btn-auth')) {
             if (el('reg-nick').style.display !== "none") {
                 if (!nick) return alert("Введите ник");
                 const q = query(collection(db, "users"), where("nickname", "==", nick));
-                if (!(await getDocs(q)).empty) return alert("Ник занят!");
+                // keep a soft check to avoid blocking in small private use
+                const existing = await getDocs(q);
+                if (!existing.empty) {
+                  console.warn("Nickname exists, but continuing (simple mode).");
+                }
                 const res = await createUserWithEmailAndPassword(auth, email, pass);
                 
                 await setDoc(doc(db, "users", res.user.uid), {
@@ -578,7 +582,33 @@ if (el('btn-auth')) {
     };
 }
 
+// Guest login button (one-click)
+if (el('btn-guest')) {
+  el('btn-guest').onclick = async () => {
+    try {
+      const res = await signInAnonymously(auth);
+      const uid = res.user.uid;
+      const guestNick = 'guest' + Math.random().toString(36).substring(2,8);
+      await setDoc(doc(db, "users", uid), {
+        uid,
+        nickname: guestNick,
+        emoji: "👤",
+        avatarUrl: null,
+        isVerify: false,
+        isOnline: true,
+        lastSeen: serverTimestamp(),
+        advancedStatus: 'В сети',
+        isAnonymous: true
+      });
+    } catch (err) {
+      console.error("Guest login error:", err);
+      alert('Ошибка гостевого входа');
+    }
+  };
+}
+
 onAuthStateChanged(auth, async (u) => {
+    console.log("onAuthStateChanged ->", u?.uid);
     if (u) {
         const d = await getDoc(doc(db, "users", u.uid));
         user = d.data();
@@ -967,6 +997,33 @@ function loadChats() {
             div.onclick = () => openChat(dSnap.id, title, avatarHtml, isV, c);
             list.appendChild(div);
         });
+    }, (error) => {
+        console.error("loadChats snapshot error:", error);
+        // fallback without orderBy (in case index missing)
+        const qFallback = query(collection(db, "chats"), where("members", "array-contains", user.uid));
+        onSnapshot(qFallback, (snap2) => {
+            const list = el('ui-chats');
+            if (!list) return;
+            list.innerHTML = '';
+            snap2.forEach(dSnap => {
+                const c = dSnap.data();
+                let title = c.name || (c.nicks ? Object.values(c.nicks)[0] : 'Chat');
+                let avatarHtml = c.groupAvatarUrl ? `<img src="${c.groupAvatarUrl}">` : (c.emoji || '👥');
+                const div = document.createElement('div');
+                div.className = 'chat-item';
+                div.innerHTML = `
+                    <div class="avatar-wrap"><div class="avatar">${avatarHtml}</div></div>
+                    <div style="margin-left:15px; flex:1; overflow:hidden;">
+                        <div style="font-weight:600;">${title}</div>
+                        <div style="font-size:12px; color:var(--text-muted);">${c.lastMessage || ""}</div>
+                    </div>
+                `;
+                div.onclick = () => openChat(dSnap.id, title, avatarHtml, false, c);
+                list.appendChild(div);
+            });
+        }, (err2) => {
+            console.error("loadChats fallback error:", err2);
+        });
     });
 }
 
@@ -1069,6 +1126,8 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             newMessagesCount++;
             showNewMessagesIndicator(newMessagesCount);
         }
+    }, (err) => {
+        console.error("unsubMsgs error:", err);
     });
 };
 
@@ -2009,6 +2068,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (searchInput) {
         searchInput.addEventListener('input', () => searchMessages());
     }
+
+    // ensure mobile UI state on load
+    ensureMobileUI();
 });
 
 // === CONTACTS ===
@@ -2064,3 +2126,71 @@ window.loadContacts = async () => {
         contactsContainer.appendChild(div);
     });
 };
+
+// === DEBUG HELPERS & MOBILE UI FIXES ===
+
+// Debug: inspect chats visible to current user
+window.debugChats = async () => {
+  console.log("CURRENT USER:", user);
+  if (!user?.uid) {
+    console.warn("No authenticated user (user.uid is missing)");
+  }
+  try {
+    const allSnap = await getDocs(collection(db, "chats"));
+    console.log("[debug] all chats count:", allSnap.size);
+    allSnap.forEach(d => console.log("chat:", d.id, d.data()));
+
+    if (user?.uid) {
+      const q = query(collection(db, "chats"), where("members", "array-contains", user.uid));
+      const snap = await getDocs(q);
+      console.log("[debug] filtered chats count:", snap.size);
+      snap.forEach(d => console.log("filtered chat:", d.id, d.data()));
+    }
+  } catch (err) {
+    console.error("[debugChats] error:", err);
+  }
+};
+
+// Mobile UI helpers
+window.ensureMobileUI = () => {
+  const appContainer = document.querySelector('.app-container');
+  if (!appContainer) return;
+  if (window.innerWidth <= 900) {
+    appContainer.classList.remove('show-chat'); // show list by default on mobile
+  }
+};
+
+// Back button handler
+const backBtn = el('btn-back');
+if (backBtn) {
+  backBtn.onclick = () => {
+    document.querySelector('.app-container')?.classList.remove('show-chat');
+    const su = el('search-user');
+    if (su) su.focus();
+  };
+}
+
+// Wrap loadChats to show hint if no chats in UI
+(function() {
+  const original = window.loadChats;
+  window.loadChats = function(...args) {
+    if (typeof original === 'function') original.apply(this, args);
+    setTimeout(() => {
+      const list = el('ui-chats');
+      if (!list) return;
+      if (list.children.length === 0) {
+        const hintId = 'no-chats-hint';
+        if (!el(hintId)) {
+          const d = document.createElement('div');
+          d.id = hintId;
+          d.style.cssText = 'text-align:center; color:var(--text-muted); padding:16px;';
+          d.innerText = 'No chats yet — start a chat with a friend';
+          list.appendChild(d);
+        }
+      } else {
+        const h = el('no-chats-hint');
+        if (h) h.remove();
+      }
+    }, 600);
+  };
+})();
