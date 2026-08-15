@@ -24,7 +24,7 @@
             <input type="text" id="reg-nick" class="auth-input" placeholder="Никнейм (только буквы/цифры)" style="display:none">
             <input type="email" id="auth-email" class="auth-input" placeholder="Email">
             <input type="password" id="auth-pass" class="auth-input" placeholder="Пароль">
-            <button class="primary-btn" id="btn-auth">Войти</button>
+            <button class="primary-btn" id="btn-auth" type="button">Войти</button>
             <p id="auth-toggle" style="cursor:pointer; color:var(--primary); font-size:12px; margin-top:5px;">Создать аккаунт</p>
             <!-- optional guest btn could be here -->
         </div>
@@ -36,18 +36,18 @@
             <h3 id="profile-nick" style="font-size:18px; margin-bottom:5px;">@nick</h3>
             <div id="profile-avatar-view" class="avatar">👤</div>
             <div class="avatar-buttons-container">
-                <button class="primary-btn" id="upload-avatar-btn" onclick="uploadAvatarPhoto()">
+                <button class="primary-btn" id="upload-avatar-btn" onclick="uploadAvatarPhoto()" type="button">
                     <i class="fa-solid fa-camera"></i> Upload
                 </button>
-                <button class="primary-btn" id="remove-avatar-btn" onclick="removeAvatarPhoto()">
+                <button class="primary-btn" id="remove-avatar-btn" onclick="removeAvatarPhoto()" type="button">
                     <i class="fa-solid fa-trash"></i> Remove
                 </button>
             </div>
             <div class="emoji-grid" id="profile-emojis"></div>
-            <button class="primary-btn" style="background:#ef4444; margin-top:5px;" onclick="logoutUser()">
+            <button class="primary-btn" style="background:#ef4444; margin-top:5px;" onclick="logoutUser()" type="button">
                 <i class="fa-solid fa-sign-out-alt"></i> Выйти
             </button>
-            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Закрыть</button>
+            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()" type="button">Закрыть</button>
         </div>
     </div>
 
@@ -76,10 +76,10 @@
                         <small>Звонков</small>
                     </div>
                 </div>
-                <button class="primary-btn" id="profile-start-chat" onclick="startDMWithNick()">
+                <button class="primary-btn" id="profile-start-chat" onclick="startDMWithNick()" type="button">
                     <i class="fa-solid fa-comment"></i> Написать
                 </button>
-                <button class="primary-btn" id="profile-start-call" onclick="startCallWithNick()">
+                <button class="primary-btn" id="profile-start-call" onclick="startCallWithNick()" type="button">
                     <i class="fa-solid fa-phone"></i> Позвонить
                 </button>
             </div>
@@ -91,8 +91,8 @@
         <div class="modal-box">
             <h3 style="font-size:17px; margin-bottom:10px;">Новая группа</h3>
             <input type="text" id="new-group-name" class="auth-input" placeholder="Название группы">
-            <button class="primary-btn" onclick="confirmCreateGroup()">Создать</button>
-            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Отмена</button>
+            <button class="primary-btn" onclick="confirmCreateGroup()" type="button">Создать</button>
+            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()" type="button">Отмена</button>
         </div>
     </div>
 
@@ -103,26 +103,26 @@
             <div class="group-settings-section">
                 <label>Название группы:</label>
                 <input type="text" id="group-name-input" class="auth-input">
-                <button class="primary-btn" onclick="updateGroupName()">Сохранить</button>
+                <button class="primary-btn" onclick="updateGroupName()" type="button">Сохранить</button>
             </div>
             <div class="group-settings-section">
                 <label>Аватар группы:</label>
                 <div class="group-avatar-preview" id="group-avatar">👥</div>
-                <button class="primary-btn" onclick="uploadGroupAvatar()">
+                <button class="primary-btn" onclick="uploadGroupAvatar()" type="button">
                     <i class="fa-solid fa-image"></i> Загрузить
                 </button>
             </div>
             <div class="group-settings-section">
                 <label>Права участников:</label>
                 <div id="members-list" class="members-list"></div>
-                <button class="primary-btn" onclick="openModal('modal-member')">
+                <button class="primary-btn" onclick="openModal('modal-member')" type="button">
                     <i class="fa-solid fa-plus"></i> Добавить участника
                 </button>
             </div>
-            <button class="primary-btn" style="background:#ef4444;" onclick="deleteGroup()">
+            <button class="primary-btn" style="background:#ef4444;" onclick="deleteGroup()" type="button">
                 <i class="fa-solid fa-trash"></i> Удалить группу
             </button>
-            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Закрыть</button>
+            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()" type="button">Закрыть</button>
         </div>
     </div>
 
@@ -135,8 +135,8 @@
                 <option value="member">Участник</option>
                 <option value="moderator">Модератор</option>
             </select>
-            <button class="primary-btn" onclick="confirmAddMember()">Добавить</button>
-            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Отмена</button>
+            <button class="primary-btn" onclick="confirmAddMember()" type="button">Добавить</button>
+            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()" type="button">Отмена</button>
         </div>
     </div>
 
@@ -146,8 +146,8 @@
             <h3 style="margin-bottom: 8px; font-size:17px;">Входящий звонок</h3>
             <p id="caller-name" style="color:var(--text-muted); margin-bottom: 15px; font-size:13px;">Кто-то звонит вам...</p>
             <div style="display:flex; gap:10px;">
-                <button class="primary-btn btn-answer" onclick="answerCall()"><i class="fa-solid fa-phone"></i></button>
-                <button class="primary-btn btn-hangup" onclick="rejectCall()"><i class="fa-solid fa-phone-slash"></i></button>
+                <button class="primary-btn btn-answer" onclick="answerCall()" type="button"><i class="fa-solid fa-phone"></i></button>
+                <button class="primary-btn btn-hangup" onclick="rejectCall()" type="button"><i class="fa-solid fa-phone-slash"></i></button>
             </div>
         </div>
     </div>
@@ -157,28 +157,28 @@
         <div class="modal-box">
             <h3>Настройки</h3>
             <div class="settings-list">
-                <button class="setting-item" onclick="openModal('modal-themes')">
+                <button class="setting-item" onclick="openModal('modal-themes')" type="button">
                     <i class="fa-solid fa-palette"></i>
                     <span>Темы</span>
                 </button>
-                <button class="setting-item" onclick="toggleNotifications()">
+                <button class="setting-item" onclick="toggleNotifications()" type="button">
                     <i class="fa-solid fa-bell"></i>
                     <span>Уведомления</span>
                     <i class="fa-solid fa-toggle-on" id="notif-toggle"></i>
                 </button>
-                <button class="setting-item" onclick="openModal('modal-backup')">
+                <button class="setting-item" onclick="openModal('modal-backup')" type="button">
                     <i class="fa-solid fa-cloud-arrow-up"></i>
                     <span>Резервная копия</span>
                 </button>
-                <button class="setting-item" onclick="clearCache()">
+                <button class="setting-item" onclick="clearCache()" type="button">
                     <i class="fa-solid fa-trash"></i>
                     <span>Очистить кэш</span>
                 </button>
             </div>
-            <button class="primary-btn" style="background:#ef4444;" onclick="logoutUser()">
+            <button class="primary-btn" style="background:#ef4444;" onclick="logoutUser()" type="button">
                 <i class="fa-solid fa-sign-out-alt"></i> Выйти
             </button>
-            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Закрыть</button>
+            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()" type="button">Закрыть</button>
         </div>
     </div>
 
@@ -187,7 +187,7 @@
         <div class="modal-box">
             <h3>Выберите тему</h3>
             <div class="themes-grid" id="themes-grid"></div>
-            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Закрыть</button>
+            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()" type="button">Закрыть</button>
         </div>
     </div>
 
@@ -195,14 +195,14 @@
     <div id="modal-backup" class="modal-overlay">
         <div class="modal-box">
             <h3>Резервная копия</h3>
-            <button class="primary-btn" onclick="exportChats()">
+            <button class="primary-btn" onclick="exportChats()" type="button">
                 <i class="fa-solid fa-download"></i> Экспортировать чаты
             </button>
-            <button class="primary-btn" onclick="importChats()">
+            <button class="primary-btn" onclick="importChats()" type="button">
                 <i class="fa-solid fa-upload"></i> Импортировать чаты
             </button>
             <input type="file" id="import-file" style="display:none;" accept=".json">
-            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Закрыть</button>
+            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()" type="button">Закрыть</button>
         </div>
     </div>
 
@@ -216,7 +216,7 @@
                 <option value="">Все отправители</option>
             </select>
             <div id="search-results" class="search-results"></div>
-            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Закрыть</button>
+            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()" type="button">Закрыть</button>
         </div>
     </div>
 
@@ -225,7 +225,7 @@
         <div class="modal-box" style="max-width: 400px; max-height: 500px;">
             <h3>Стикеры</h3>
             <div class="stickers-grid" id="stickers-grid"></div>
-            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Закрыть</button>
+            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()" type="button">Закрыть</button>
         </div>
     </div>
 
@@ -242,17 +242,17 @@
                 <button class="emoji-cat-btn" data-category="travel" onclick="filterEmojis('travel')">✈️</button>
             </div>
             <div class="emoji-picker-grid" id="emoji-picker-grid"></div>
-            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Закрыть</button>
+            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()" type="button">Закрыть</button>
         </div>
     </div>
 
     <!-- VIDEO CALL SCREEN WITH EFFECTS -->
     <div id="call-screen" class="call-screen">
         <div class="video-effects-panel" id="video-effects-panel">
-            <button class="effect-btn" onclick="applyBackgroundBlur()" title="Размыть фон">
+            <button class="effect-btn" onclick="applyBackgroundBlur()" title="Размыть фон" type="button">
                 <i class="fa-solid fa-water"></i>
             </button>
-            <button class="effect-btn" onclick="toggleRecording()" title="Запись">
+            <button class="effect-btn" onclick="toggleRecording()" title="Запись" type="button">
                 <i class="fa-solid fa-circle-dot" id="recording-icon"></i>
             </button>
         </div>
@@ -260,22 +260,22 @@
             <video id="local-video" autoplay playsinline muted></video>
         </div>
         <div class="call-controls">
-            <button class="call-btn" id="btn-screen-share" onclick="toggleScreenShare()">
+            <button class="call-btn" id="btn-screen-share" onclick="toggleScreenShare()" type="button">
                 <i class="fa-solid fa-display"></i>
             </button>
-            <button class="call-btn" id="btn-mic" style="background: #334155;" onclick="toggleMic()">
+            <button class="call-btn" id="btn-mic" style="background: #334155;" onclick="toggleMic()" type="button">
                 <i class="fa-solid fa-microphone"></i>
             </button>
-            <button class="call-btn btn-hangup" onclick="endCall()">
+            <button class="call-btn btn-hangup" onclick="endCall()" type="button">
                 <i class="fa-solid fa-phone-slash"></i>
             </button>
-            <button class="call-btn" id="btn-cam" style="background: #334155;" onclick="toggleCam()">
+            <button class="call-btn" id="btn-cam" style="background: #334155;" onclick="toggleCam()" type="button">
                 <i class="fa-solid fa-video"></i>
             </button>
         </div>
         <div id="screen-share-preview" class="screen-share-preview" style="display:none;">
             <video id="screen-video" autoplay playsinline></video>
-            <button class="call-btn btn-hangup" onclick="stopScreenShare()" style="position:absolute; top:10px; right:10px;">
+            <button class="call-btn btn-hangup" onclick="stopScreenShare()" style="position:absolute; top:10px; right:10px;" type="button">
                 <i class="fa-solid fa-xmark"></i>
             </button>
         </div>
@@ -289,13 +289,13 @@
             <div class="call-timer" id="call-timer">00:00</div>
         </div>
         <div class="call-controls voice-controls">
-            <button class="call-btn" id="voice-btn-mic" onclick="toggleVoiceMic()">
+            <button class="call-btn" id="voice-btn-mic" onclick="toggleVoiceMic()" type="button">
                 <i class="fa-solid fa-microphone"></i>
             </button>
-            <button class="call-btn btn-hangup" onclick="endVoiceCall()">
+            <button class="call-btn btn-hangup" onclick="endVoiceCall()" type="button">
                 <i class="fa-solid fa-phone-slash"></i>
             </button>
-            <button class="call-btn" id="voice-btn-speaker" onclick="toggleSpeaker()">
+            <button class="call-btn" id="voice-btn-speaker" onclick="toggleSpeaker()" type="button">
                 <i class="fa-solid fa-volume-high"></i>
             </button>
         </div>
@@ -308,14 +308,14 @@
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px;">
                     <h2 style="font-size:19px;">Чаты</h2>
                     <div style="display:flex; gap:12px; align-items:center;">
-                        <i class="fa-solid fa-users" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-group')"></i>
-                        <i class="fa-solid fa-magnifying-glass" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-search')"></i>
+                        <i class="fa-solid fa-users header-icon-btn" style="color:var(--primary); font-size:18px;" onclick="openModal('modal-group')"></i>
+                        <i class="fa-solid fa-magnifying-glass header-icon-btn" style="color:var(--primary); font-size:18px;" onclick="openModal('modal-search')"></i>
                         <div id="my-avatar" class="avatar" style="width:35px; height:35px; font-size:16px; cursor:pointer;" onclick="openProfile()">👤</div>
                     </div>
                 </div>
                 <div style="display:flex; gap:6px;">
                     <input type="text" id="search-user" class="auth-input" placeholder="Ник друга..." style="margin:0; padding:10px; font-size:13px;">
-                    <button class="primary-btn" style="width:40px; margin:0; padding:0; flex-shrink:0;" onclick="startDM()"><i class="fa-solid fa-plus"></i></button>
+                    <button class="primary-btn" style="width:40px; margin:0; padding:0; flex-shrink:0;" onclick="startDM()" type="button"><i class="fa-solid fa-plus"></i></button>
                 </div>
             </div>
             <div class="chat-list" id="ui-chats"></div>
@@ -323,7 +323,9 @@
 
         <main class="chat-area" id="chat-area">
             <div class="chat-header">
-                <i class="fa-solid fa-arrow-left" id="btn-back" onclick="closeChat()"></i>
+                <button class="header-left-btn" id="btn-back" onclick="closeChat()" aria-label="Назад" title="Назад">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
                 <div class="avatar-wrap">
                     <div id="active-emoji" class="avatar">👤</div>
                     <div id="active-status-dot" class="status-dot dot-offline"></div>
@@ -334,15 +336,21 @@
                     <div id="advanced-status" style="font-size:11px; color:var(--primary);">Не в сети</div>
                 </div>
                 <div style="display:flex; gap:12px; align-items:center; flex-shrink:0;">
-                    <button class="header-icon-btn" id="btn-pin" style="display:none;" onclick="togglePinMessage()" title="Закрепить">
+                    <button class="header-icon-btn" id="btn-pin" style="display:none;" onclick="togglePinMessage()" title="Закрепить" type="button">
                         <i class="fa-solid fa-thumbtack"></i>
                     </button>
-                    <button class="header-icon-btn" id="btn-voice-call" style="display:none;" onclick="startVoiceCall()" title="Голосовой звонок">
+                    <button class="header-icon-btn" id="btn-voice-call" style="display:none;" title="Голосовой звонок" type="button" aria-label="Голосовой звонок">
                         <i class="fa-solid fa-phone"></i>
                     </button>
-                    <i class="fa-solid fa-video" id="btn-call" style="display:none; color:var(--primary); cursor:pointer; font-size:18px;" onclick="startCall()"></i>
-                    <i class="fa-solid fa-user-plus" id="add-member-btn" style="display:none; color:var(--primary); cursor:pointer; font-size:18px;" onclick="openModal('modal-member')"></i>
-                    <i class="fa-solid fa-sliders-h" style="display:none; color:var(--primary); cursor:pointer; font-size:18px;" id="btn-group-settings" onclick="openGroupSettingsBtn()"></i>
+                    <button class="header-icon-btn" id="btn-call" style="display:none; color:var(--primary);" title="Видео-звонок" type="button">
+                        <i class="fa-solid fa-video"></i>
+                    </button>
+                    <button class="header-icon-btn" id="add-member-btn" style="display:none; color:var(--primary);" title="Добавить участника" type="button" onclick="openModal('modal-member')">
+                        <i class="fa-solid fa-user-plus"></i>
+                    </button>
+                    <button class="header-icon-btn" id="btn-group-settings" style="display:none; color:var(--primary);" title="Настройки группы" type="button" onclick="openGroupSettingsBtn()">
+                        <i class="fa-solid fa-sliders-h"></i>
+                    </button>
                 </div>
             </div>
 
@@ -360,22 +368,22 @@
                     <div class="reply-preview-nick" id="reply-nick">Ник</div>
                     <div class="reply-preview-text" id="reply-text">Текст...</div>
                 </div>
-                <i class="fa-solid fa-xmark" style="cursor:pointer; padding:4px; flex-shrink:0;" onclick="cancelReply()"></i>
+                <button class="icon-btn" onclick="cancelReply()" aria-label="Отменить" type="button"><i class="fa-solid fa-xmark"></i></button>
             </div>
 
             <div class="input-bar">
                 <input type="file" id="file-input" style="display:none" accept="image/*, video/mp4, video/webm, image/gif, .pdf, .doc, .docx, .txt">
-                <button class="primary-btn icon-btn" title="Файл" onclick="document.getElementById('file-input').click()">
+                <button class="primary-btn icon-btn" title="Файл" onclick="document.getElementById('file-input').click()" type="button">
                     <i class="fa-solid fa-paperclip"></i>
                 </button>
-                <button class="primary-btn icon-btn" title="Стикеры" onclick="openModal('modal-stickers')">
+                <button class="primary-btn icon-btn" title="Стикеры" onclick="openModal('modal-stickers')" type="button">
                     <i class="fa-solid fa-face-grin-stars"></i>
                 </button>
-                <button class="primary-btn icon-btn" title="Эмодзи" onclick="openModal('modal-emoji-picker')">
+                <button class="primary-btn icon-btn" title="Эмодзи" onclick="openModal('modal-emoji-picker')" type="button">
                     <i class="fa-solid fa-face-smile"></i>
                 </button>
                 <input type="text" id="input-msg" class="msg-input" placeholder="Сообщение...">
-                <button class="primary-btn send-btn" title="Отправить" onclick="sendMsg()">
+                <button class="primary-btn send-btn" title="Отправить" onclick="sendMsg()" type="button">
                     <i class="fa-solid fa-paper-plane"></i>
                 </button>
             </div>
@@ -384,15 +392,15 @@
 
     <!-- BOTTOM PANEL FOR MOBILE -->
     <div class="bottom-panel-mobile" id="mobile-panel">
-        <button class="panel-btn" onclick="openModal('modal-settings')" title="Настройки">
+        <button class="panel-btn" onclick="openModal('modal-settings')" title="Настройки" type="button">
             <i class="fa-solid fa-sliders-h"></i>
             <span class="panel-label">Настройки</span>
         </button>
-        <button class="panel-btn" onclick="document.getElementById('app').classList.toggle('show-chat')" title="Чаты">
+        <button class="panel-btn" onclick="document.getElementById('app').classList.toggle('show-chat')" title="Чаты" type="button">
             <i class="fa-solid fa-comments"></i>
             <span class="panel-label">Чаты</span>
         </button>
-        <button class="panel-btn" onclick="openModal('modal-search')" title="Поиск">
+        <button class="panel-btn" onclick="openModal('modal-search')" title="Поиск" type="button">
             <i class="fa-solid fa-magnifying-glass"></i>
             <span class="panel-label">Поиск</span>
         </button>
