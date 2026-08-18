@@ -81,8 +81,13 @@ let selectedTheme = localStorage.getItem('selectedTheme') || '';
 let pinnedMessages = {};
 let searchResults = [];
 
+// remote audio element (for voice calls autoplay handling)
+const remoteAudio = el('remote-audio');
+
+// Modified getBadge: return neutral small badge (no green)
 const getBadge = (v) => v ? `<i class="fa-solid fa-circle-check verified-badge"></i>` : '';
 
+// (unchanged) emojisByCategory, reactions, applyTheme, etc.
 const emojisByCategory = {
     smileys: ['😊', '😂', '❤️', '😍', '🤔', '😎', '🥳', '😢', '😡', '🤗', '😴', '😷', '🤮', '🤬', '😈'],
     gestures: ['👋', '👍', '👎', '👏', '🙌', '🤝', '👊', '✊', '🤲', '🙏', '💪', '🦾'],
@@ -91,7 +96,6 @@ const emojisByCategory = {
     food: ['🍕', '🍔', '🍟', '🌭', '🍿', '🍗', '🍖', '🍝', '🍜', '🍱', '🍣', '🍰'],
     travel: ['✈️', '🚁', '🚂', '🚄', '🚅', '🚆', '🚇', '🚈', '🚉', '🚊', '🚝', '🚞']
 };
-
 const reactions = ['👍', '❤️', '😂', '😢', '😡', '🔥'];
 
 // === THEME SYSTEM ===
@@ -604,7 +608,7 @@ if (el('auth-toggle')) {
     el('auth-toggle').onclick = () => {
         const isReg = el('reg-nick').style.display === "none";
         el('reg-nick').style.display = isReg ? "block" : "none";
-        el('auth-title').innerText = isReg ? "Регистрация" : "SafeMessage Pro";
+        el('auth-title').innerText = isReg ? "Регистрация" : "VentaBand Pro";
         el('auth-toggle').innerText = isReg ? "Есть аккаунт? Войти" : "Создать аккаунт";
     };
 }
@@ -903,10 +907,27 @@ async function sendMediaMsg(url, type, fileName = '') {
 }
 
 // === AVATAR SYSTEM ===
+function attachAvatarHtml(container, url, sizeStyle = '') {
+    // container: DOM element where to put <img> or emoji text
+    const fallback = '/assets/default-avatar.png';
+    if (!container) return;
+    if (url) {
+        // Insert img with onerror fallback to avoid broken images
+        container.innerHTML = `<img src="${url}" alt="avatar" style="width:100%; height:100%; border-radius:50%; object-fit:cover; ${sizeStyle}" onerror="this.onerror=null;this.src='${fallback}';">`;
+    } else {
+        // leave emoji or placeholder (assume container.dataset.emoji)
+        if (container.dataset && container.dataset.emoji) {
+            container.innerText = container.dataset.emoji;
+        } else {
+            container.innerText = "👤";
+        }
+    }
+}
+
 function updateAvatarDisplay() {
     if (!el('my-avatar')) return;
     if (user?.avatarUrl) {
-        el('my-avatar').innerHTML = `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+        el('my-avatar').innerHTML = `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">`;
     } else {
         el('my-avatar').innerText = user?.emoji || "👤";
     }
@@ -914,7 +935,7 @@ function updateAvatarDisplay() {
 
 function getAvatarHtml(userObj) {
     if (userObj?.avatarUrl) {
-        return `<img src="${userObj.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+        return `<img src="${userObj.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">`;
     }
     return userObj?.emoji || "👤";
 }
@@ -1022,13 +1043,13 @@ function loadChats() {
             let title, avatarHtml, isV = false, otherId = null;
             if (c.type === 'group') {
                 title = c.name;
-                avatarHtml = c.groupAvatarUrl ? `<img src="${c.groupAvatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">` : "👥";
+                avatarHtml = c.groupAvatarUrl ? `<img src="${c.groupAvatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">` : "👥";
             } else {
                 otherId = c.members.find(id => id !== user.uid);
                 title = c.nicks?.[otherId] || "User";
                 const otherUser = c.avatarUrls?.[otherId];
                 if (otherUser) {
-                    avatarHtml = `<img src="${otherUser}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+                    avatarHtml = `<img src="${otherUser}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">`;
                 } else {
                     avatarHtml = c.emojis?.[otherId] || "👤";
                 }
@@ -1054,10 +1075,22 @@ function loadChats() {
                     const avatarDiv = div.querySelector('.avatar');
                     const userData = uDoc.data();
                     if (userData?.avatarUrl) {
-                        avatarDiv.innerHTML = `<img src="${userData.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+                        // use onerror fallback to avoid broken image
+                        avatarDiv.innerHTML = `<img src="${userData.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">`;
                     }
                 });
             }
+
+            // Click avatar -> open user profile
+            const avatarWrap = div.querySelector('.avatar');
+            if (avatarWrap && otherId) {
+                avatarWrap.style.cursor = 'pointer';
+                avatarWrap.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    openUserProfile(otherId);
+                });
+            }
+
             div.onclick = () => openChat(dSnap.id, title, avatarHtml, isV, c);
             list.appendChild(div);
         });
@@ -1072,7 +1105,7 @@ function loadChats() {
             snap2.forEach(dSnap => {
                 const c = dSnap.data();
                 let title = c.name || (c.nicks ? Object.values(c.nicks)[0] : 'Chat');
-                let avatarHtml = c.groupAvatarUrl ? `<img src="${c.groupAvatarUrl}">` : (c.emoji || '👥');
+                let avatarHtml = c.groupAvatarUrl ? `<img src="${c.groupAvatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">` : (c.emoji || '👥');
                 const div = document.createElement('div');
                 div.className = 'chat-item';
                 div.innerHTML = `
@@ -1122,7 +1155,13 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             const userData = uDoc.data();
             el('advanced-status').innerText = userData?.advancedStatus || 'Не в сети';
             if (userData?.avatarUrl) {
-                el('active-emoji').innerHTML = `<img src="${userData.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+                el('active-emoji').innerHTML = `<img src="${userData.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">`;
+            }
+            // make header avatar clickable to open profile
+            const headerAvatar = el('active-emoji');
+            if (headerAvatar) {
+                headerAvatar.style.cursor = 'pointer';
+                headerAvatar.onclick = () => openUserProfile(otherId);
             }
         });
     }
@@ -1149,7 +1188,9 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             let replyHtml = '';
             if (m.replyTo) {
                 const r = m.replyTo;
-                replyHtml = `<div class="reply-quote" onclick="document.getElementById('m-${r.mId}')?.scrollIntoView({behavior:'smooth'})"><b>@${r.nick}</b><br>${(r.text || '').substring(0, 80)}...</div>`;
+                try {
+                    replyHtml = `<div class="reply-quote" onclick="document.getElementById('m-${r.mId}')?.scrollIntoView({behavior:'smooth'})"><b>@${r.nick}</b><br>${(r.text || '').substring(0, 80)}...</div>`;
+                } catch (e) { replyHtml = ''; }
             }
 
             let content = m.text || '';
@@ -1157,9 +1198,8 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             if (m.type === "video") content = `<video src="${m.text}" controls style="max-width:100%; border-radius:15px; margin-top:5px; background:#000;"></video>`;
 
             const safeText = (m.type ? 'Медиа' : (m.text || '').replace(/'/g, "\\'"));
-            // actions: reply, forward, edit (mine), delete (mine), reaction
             const actions = `<i class="fa-solid fa-reply msg-action" onclick="setReply('${mId}', '${safeText}', '${m.senderNick || ''}')"></i>
-                ${isMine ? `<i class="fa-solid fa-trash msg-action" onclick="deleteMsg('${mId}')"></i><i class="fa-solid fa-pen msg-action" onclick="editMsg('${mId}')"></i>` : `<i class="fa-solid fa-share-from-square msg-action" onclick="forwardMsg('${mId}')"></i>`}
+                ${isMine ? `<i class="fa-solid fa-trash msg-action" onclick="deleteMsg('${mId}')"></i><i class="fa-solid fa-pen msg-action" onclick="editMsg('${mId}')"></i>` : `<i class="fa-solid fa-share msg-action" onclick="forwardMsg('${mId}')"></i>`}
                 <i class="fa-solid fa-heart msg-action" onclick="addReaction('${mId}', '❤️')"></i>`;
 
             const reactionsHtml = displayReactions(m.reactions);
@@ -1169,7 +1209,7 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${isMine ? 'sent' : 'received'}`;
             msgDiv.id = `m-${mId}`;
-            msgDiv.innerHTML = `<div class="msg-info">@${m.senderNick || 'user'} ${getBadge(m.senderVerified)} ${editedBadge} ${isMine ? statusBadge : ''}</div><div class="bubble">${replyHtml}${content}${reactionsHtml}</div><div style="display:flex; gap:8px; align-items:center; margin-top:6px;">${actions}</div>`;
+            msgDiv.innerHTML = `<div class="msg-info">@${m.senderNick || 'user'} ${getBadge(m.senderVerified)} ${editedBadge} ${isMine ? statusBadge : ''}</div><div class="bubble">${replyHtml}${content}${reactionsHtml}<div style="margin-top:6px; display:flex; gap:8px; align-items:center;">${actions}</div></div>`;
             
             let startX = 0;
             msgDiv.ontouchstart = (e) => startX = e.touches[0].clientX;
@@ -1385,11 +1425,23 @@ async function setupPeerConnection(peerUid, roomId, isInitiator) {
                 vid.id = `vid-${peerUid}`;
                 vid.autoplay = true;
                 vid.playsInline = true;
+                vid.style.maxHeight = '60vh';
                 const vc = document.querySelector('.video-container');
                 if (vc) vc.insertBefore(vid, el('local-video'));
             }
             if (e.streams && e.streams[0]) {
-                vid.srcObject = e.streams[0];
+                // If stream has only audio -> attach to remote-audio element to avoid video blocking
+                const s = e.streams[0];
+                if (s.getVideoTracks().length === 0 && s.getAudioTracks().length > 0) {
+                    if (remoteAudio) {
+                        remoteAudio.srcObject = s;
+                        remoteAudio.play().catch(() => console.debug('Autoplay blocked for remote audio'));
+                    } else {
+                        vid.srcObject = s;
+                    }
+                } else {
+                    vid.srcObject = s;
+                }
             }
         };
 
@@ -1612,6 +1664,17 @@ async function setupVoicePeerConnection(peerId, roomId, isInitiator) {
             }
         });
 
+        pc.ontrack = (e) => {
+            // for voice calls, attach audio to remoteAudio element
+            if (e.streams && e.streams[0]) {
+                const s = e.streams[0];
+                if (remoteAudio) {
+                    remoteAudio.srcObject = s;
+                    remoteAudio.play().catch(()=>console.debug('Autoplay blocked for remote audio'));
+                }
+            }
+        };
+
         if (isInitiator) {
             try {
                 const offer = await pc.createOffer();
@@ -1819,7 +1882,7 @@ window.openProfile = () => {
     if (el('profile-nick')) el('profile-nick').innerText = "@" + (user?.nickname || '');
     const avatarContainer = el('profile-avatar-view');
     if (avatarContainer) {
-        if (user?.avatarUrl) avatarContainer.innerHTML = `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+        if (user?.avatarUrl) avatarContainer.innerHTML = `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">`;
         else avatarContainer.innerText = user?.emoji || "👤";
     }
 
@@ -1859,7 +1922,7 @@ window.openUserProfile = async (userId) => {
 
         const avatarDiv = el('user-profile-content').querySelector('.user-avatar-large');
         if (userData.avatarUrl) {
-            avatarDiv.innerHTML = `<img src="${userData.avatarUrl}">`;
+            avatarDiv.innerHTML = `<img src="${userData.avatarUrl}" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">`;
         } else {
             avatarDiv.innerText = userData.emoji || "👤";
         }
@@ -1968,7 +2031,7 @@ window.openGroupSettings = async (groupId) => {
             div.className = 'member-item';
 
             const avatar = userData.avatarUrl
-                ? `<img src="${userData.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`
+                ? `<img src="${userData.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">`
                 : userData.emoji;
 
             const role = group.roles?.[memberId] || 'member';
@@ -2026,7 +2089,7 @@ window.uploadGroupAvatar = async () => {
                 await updateDoc(doc(db, "chats", activeGroupId), {
                     groupAvatarUrl: data.data.url
                 });
-                el('group-avatar').innerHTML = `<img src="${data.data.url}" style="width:100%; height:100%; border-radius:12px; object-fit:cover;">`;
+                el('group-avatar').innerHTML = `<img src="${data.data.url}" style="width:100%; height:100%; border-radius:12px; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">`;
                 alert('✅ Аватар обновлен!');
             }
         } catch (err) {
@@ -2176,24 +2239,47 @@ window.loadContacts = async () => {
     contacts.forEach(contact => {
         const div = document.createElement('div');
         div.className = 'contact-item';
-        const avatar = contact.avatar
-            ? `<img src="${contact.avatar}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`
-            : contact.emoji;
+        div.style.display = 'flex';
+        div.style.justifyContent = 'space-between';
+        div.style.alignItems = 'center';
+        div.style.padding = '10px';
+        div.style.borderBottom = '1px solid rgba(255,255,255,0.02)';
 
-        div.innerHTML = `
-            <div class="contact-info">
-                <div class="contact-avatar">${avatar}</div>
-                <span style="font-weight:500;">@${contact.nick}</span>
-            </div>
-            <div class="contact-action">
-                <button onclick="startDMWithId('${contact.id}')" title="Сообщение">
-                    <i class="fa-solid fa-comment"></i>
-                </button>
-                <button onclick="startCallWithId('${contact.id}')" title="Звонок">
-                    <i class="fa-solid fa-phone"></i>
-                </button>
-            </div>
+        const left = document.createElement('div');
+        left.style.display = 'flex';
+        left.style.gap = '10px';
+        left.style.alignItems = 'center';
+        left.style.cursor = 'pointer';
+
+        const avatarWrap = document.createElement('div');
+        avatarWrap.className = 'contact-avatar avatar small';
+        if (contact.avatar) {
+            avatarWrap.innerHTML = `<img src="${contact.avatar}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">`;
+        } else {
+            avatarWrap.innerText = contact.emoji || '👤';
+        }
+
+        const name = document.createElement('div');
+        name.innerHTML = `<div style="font-weight:500;">@${contact.nick}</div>`;
+
+        left.appendChild(avatarWrap);
+        left.appendChild(name);
+
+        left.addEventListener('click', () => {
+            openUserProfile(contact.id);
+        });
+
+        const actions = document.createElement('div');
+        actions.innerHTML = `
+            <button class="primary-btn" style="padding:8px 10px; margin-right:6px;" onclick="startDMWithId('${contact.id}')"><i class="fa-solid fa-comment"></i></button>
+            <button class="primary-btn" style="padding:8px 10px;" onclick="startCallWithId('${contact.id}')"><i class="fa-solid fa-phone"></i></button>
         `;
+        // prevent bubbling when clicking actions (so left click opens profile)
+        actions.querySelectorAll('button').forEach(b => b.addEventListener('click', (e)=>e.stopPropagation()));
+
+        div.appendChild(left);
+        div.appendChild(actions);
+
         contactsContainer.appendChild(div);
     });
 };
