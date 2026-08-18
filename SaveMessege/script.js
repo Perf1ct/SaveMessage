@@ -240,6 +240,70 @@ window.deleteMsg = async (mId) => {
     }
 };
 
+// === EDIT MESSAGE (новая функция) ===
+window.editMsg = async (mId) => {
+    try {
+        const msgRef = doc(db, `chats/${activeChatId}/messages`, mId);
+        const snap = await getDoc(msgRef);
+        if (!snap.exists()) return alert('Сообщение не найдено');
+        const current = snap.data();
+        if (current.senderId !== user.uid) return alert('Можно редактировать только свои сообщения');
+        const newText = prompt('Редактировать сообщение:', current.text || '');
+        if (newText === null) return;
+        await updateDoc(msgRef, { text: newText, edited: true, editedAt: serverTimestamp() });
+        const elMsg = document.getElementById(`m-${mId}`);
+        if (elMsg) {
+            elMsg.classList.add('edited');
+            setTimeout(() => elMsg.classList.remove('edited'), 2000);
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Ошибка редактирования');
+    }
+};
+
+// === FORWARD MESSAGE (новая функция) ===
+window.forwardMsg = async (mId) => {
+    try {
+        const msgRef = doc(db, `chats/${activeChatId}/messages`, mId);
+        const snap = await getDoc(msgRef);
+        if (!snap.exists()) return alert('Сообщение не найдено');
+        const msg = snap.data();
+        const nick = prompt("Введите ник получателя для пересылки сообщения:");
+        if (!nick) return;
+        const q = query(collection(db, "users"), where("nickname", "==", nick));
+        const s = await getDocs(q);
+        if (s.empty) return alert("Пользователь не найден");
+        const target = s.docs[0].data();
+        const cid = [user.uid, target.uid].sort().join("_");
+        await setDoc(doc(db, "chats", cid), {
+            id: cid,
+            type: 'dm',
+            members: [user.uid, target.uid],
+            nicks: { [user.uid]: user.nickname, [target.uid]: target.nickname },
+            emojis: { [user.uid]: user.emoji, [target.uid]: target.emoji },
+            avatarUrls: { [user.uid]: user.avatarUrl || null, [target.uid]: target.avatarUrl || null },
+            verified: { [user.uid]: user.isVerify || false, [target.uid]: target.isVerify || false },
+            lastMessage: "💬 Чат открыт",
+            typing: { [user.uid]: false, [target.uid]: false },
+            pinnedMessages: [],
+            createdAt: serverTimestamp()
+        }, { merge: true });
+        const fwd = {
+            text: `🔁 Переслано от @${msg.senderNick || 'user'}: ${msg.text || (msg.type || 'Медиа')}`,
+            senderId: user.uid,
+            senderNick: user.nickname,
+            createdAt: serverTimestamp(),
+            forwardedFrom: { chatId: activeChatId, messageId: mId }
+        };
+        await addDoc(collection(db, `chats/${cid}/messages`), fwd);
+        alert('Переслано!');
+    } catch (e) {
+        console.error(e);
+        alert('Ошибка пересылки');
+    }
+};
+
 window.setReply = (mId, text, nick) => {
     replyData = { mId, text: (text || '').substring(0, 50), nick };
     const rn = el('reply-nick');
@@ -331,7 +395,7 @@ function displayReactions(reactionsData) {
     let html = '<div class="message-reactions">';
     Object.entries(reactionsData).forEach(([emoji, users]) => {
         const count = Object.keys(users).length;
-        html += `<button class="reaction-button" onclick="addReaction('${emoji}')" title="Нажми чтобы убрать">
+        html += `<button class="reaction-button" onclick="addReaction('${emoji}')">
             ${emoji} <span class="reaction-count">${count}</span>
         </button>`;
     });
@@ -1085,7 +1149,7 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             let replyHtml = '';
             if (m.replyTo) {
                 const r = m.replyTo;
-                replyHtml = `<div class="reply-quote" onclick="document.getElementById('m-${r.mId}')?.scrollIntoView({behavior:'smooth'})"><b>@${r.nick}</b><br>${(r.text || '').substring(0, 80)}</div>`;
+                replyHtml = `<div class="reply-quote" onclick="document.getElementById('m-${r.mId}')?.scrollIntoView({behavior:'smooth'})"><b>@${r.nick}</b><br>${(r.text || '').substring(0, 80)}...</div>`;
             }
 
             let content = m.text || '';
@@ -1093,17 +1157,19 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             if (m.type === "video") content = `<video src="${m.text}" controls style="max-width:100%; border-radius:15px; margin-top:5px; background:#000;"></video>`;
 
             const safeText = (m.type ? 'Медиа' : (m.text || '').replace(/'/g, "\\'"));
+            // actions: reply, forward, edit (mine), delete (mine), reaction
             const actions = `<i class="fa-solid fa-reply msg-action" onclick="setReply('${mId}', '${safeText}', '${m.senderNick || ''}')"></i>
-                ${isMine ? `<i class="fa-solid fa-trash msg-action" onclick="deleteMsg('${mId}')"></i>` : ''}
+                ${isMine ? `<i class="fa-solid fa-trash msg-action" onclick="deleteMsg('${mId}')"></i><i class="fa-solid fa-pen msg-action" onclick="editMsg('${mId}')"></i>` : `<i class="fa-solid fa-share-from-square msg-action" onclick="forwardMsg('${mId}')"></i>`}
                 <i class="fa-solid fa-heart msg-action" onclick="addReaction('${mId}', '❤️')"></i>`;
 
             const reactionsHtml = displayReactions(m.reactions);
             const statusBadge = m.status === 'read' ? '👁️' : m.status === 'delivered' ? '✅' : '⏱️';
+            const editedBadge = m.edited ? ' <span style="font-size:11px; color:var(--text-muted);">(ред.)</span>' : '';
 
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${isMine ? 'sent' : 'received'}`;
             msgDiv.id = `m-${mId}`;
-            msgDiv.innerHTML = `<div class="msg-info">@${m.senderNick || 'user'} ${getBadge(m.senderVerified)} ${actions} ${isMine ? statusBadge : ''}</div><div class="bubble">${replyHtml}${content}${reactionsHtml || ''}</div>`;
+            msgDiv.innerHTML = `<div class="msg-info">@${m.senderNick || 'user'} ${getBadge(m.senderVerified)} ${editedBadge} ${isMine ? statusBadge : ''}</div><div class="bubble">${replyHtml}${content}${reactionsHtml}</div><div style="display:flex; gap:8px; align-items:center; margin-top:6px;">${actions}</div>`;
             
             let startX = 0;
             msgDiv.ontouchstart = (e) => startX = e.touches[0].clientX;
@@ -1319,14 +1385,6 @@ async function setupPeerConnection(peerUid, roomId, isInitiator) {
                 vid.id = `vid-${peerUid}`;
                 vid.autoplay = true;
                 vid.playsInline = true;
-                const grid = el('video-grid') || el('video-grid') || el('video-grid'); // safe fallback
-                // insert before local video if available
-                const container = el('video-grid') || el('video-grid') || el('video-grid');
-                // if not found, append to video container
-                const videoGrid = el('video-grid') || el('video-grid') || el('video-grid');
-                // fallback to 'video-grid' not strictly present in HTML; try 'video-grid' or 'video-grid'
-                const videoContainer = el('video-grid') || el('video-grid') || el('video-grid');
-                // Best-effort: append to .video-container
                 const vc = document.querySelector('.video-container');
                 if (vc) vc.insertBefore(vid, el('local-video'));
             }
@@ -2218,4 +2276,3 @@ if (backBtn) {
     }, 600);
   };
 })();
-
