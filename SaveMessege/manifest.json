@@ -1,7 +1,7 @@
 {
-  "name": "SafeMessage PapaPerfect",
-  "short_name": "SafeMessage",
-  "description": "SafeMessage",
+  "name": "VentaBand PapaPerfect",
+  "short_name": "VentaBand",
+  "description": "VentaBand",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#0f172a",
