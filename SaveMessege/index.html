@@ -1,17 +1,17 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#0f172a">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#0f172a" />
     <title>SafeMessage | Pro</title>
-    <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/5968/5968756.png">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json" />
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/5968/5968756.png" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
     <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tweetnacl-util@0.15.1/nacl-util.min.js"></script>
 </head>
@@ -21,12 +21,11 @@
     <div id="auth-screen" class="modal-overlay" style="display:flex;">
         <div class="modal-box">
             <h2 id="auth-title" style="margin-bottom:15px; font-size:20px;">SafeMessage Pro</h2>
-            <input type="text" id="reg-nick" class="auth-input" placeholder="Никнейм (только буквы/цифры)" style="display:none">
-            <input type="email" id="auth-email" class="auth-input" placeholder="Email">
-            <input type="password" id="auth-pass" class="auth-input" placeholder="Пароль">
+            <input type="text" id="reg-nick" class="auth-input" placeholder="Никнейм (только буквы/цифры)" style="display:none" />
+            <input type="email" id="auth-email" class="auth-input" placeholder="Email" />
+            <input type="password" id="auth-pass" class="auth-input" placeholder="Пароль" />
             <button class="primary-btn" id="btn-auth">Войти</button>
             <p id="auth-toggle" style="cursor:pointer; color:var(--primary); font-size:12px; margin-top:5px;">Создать аккаунт</p>
-            <!-- optional guest btn could be here -->
         </div>
     </div>
 
@@ -90,7 +89,7 @@
     <div id="modal-group" class="modal-overlay">
         <div class="modal-box">
             <h3 style="font-size:17px; margin-bottom:10px;">Новая группа</h3>
-            <input type="text" id="new-group-name" class="auth-input" placeholder="Название группы">
+            <input type="text" id="new-group-name" class="auth-input" placeholder="Название группы" />
             <button class="primary-btn" onclick="confirmCreateGroup()">Создать</button>
             <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Отмена</button>
         </div>
@@ -102,7 +101,7 @@
             <h3>Настройки группы</h3>
             <div class="group-settings-section">
                 <label>Название группы:</label>
-                <input type="text" id="group-name-input" class="auth-input">
+                <input type="text" id="group-name-input" class="auth-input" />
                 <button class="primary-btn" onclick="updateGroupName()">Сохранить</button>
             </div>
             <div class="group-settings-section">
@@ -130,7 +129,7 @@
     <div id="modal-member" class="modal-overlay">
         <div class="modal-box">
             <h3 style="font-size:17px; margin-bottom:10px;">Добавить участника</h3>
-            <input type="text" id="member-nick" class="auth-input" placeholder="Никнейм друга">
+            <input type="text" id="member-nick" class="auth-input" placeholder="Никнейм друга" />
             <select id="member-role" class="auth-input" style="margin-bottom:10px;">
                 <option value="member">Участник</option>
                 <option value="moderator">Модератор</option>
@@ -174,6 +173,11 @@
                     <i class="fa-solid fa-trash"></i>
                     <span>Очистить кэш</span>
                 </button>
+                <button class="setting-item" onclick="toggleDarkMode()" id="theme-toggle">
+                    <i class="fa-solid fa-moon"></i>
+                    <span>Тёмный/Светлый</span>
+                    <i class="fa-solid fa-circle" style="opacity:0.9; color:var(--primary)"></i>
+                </button>
             </div>
             <button class="primary-btn" style="background:#ef4444;" onclick="logoutUser()">
                 <i class="fa-solid fa-sign-out-alt"></i> Выйти
@@ -201,7 +205,20 @@
             <button class="primary-btn" onclick="importChats()">
                 <i class="fa-solid fa-upload"></i> Импортировать чаты
             </button>
-            <input type="file" id="import-file" style="display:none;" accept=".json">
+            <input type="file" id="import-file" style="display:none;" accept=".json" />
+            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- CONTACTS MODAL (new) -->
+    <div id="modal-contacts" class="modal-overlay">
+        <div class="modal-box" style="max-width:540px;">
+            <h3>Контакты</h3>
+            <div style="display:flex; gap:8px; margin-bottom:10px;">
+                <input id="contacts-search" class="auth-input" placeholder="Поиск контактов..." />
+                <button class="primary-btn" onclick="loadContacts()">Обновить</button>
+            </div>
+            <div id="contacts-list" style="max-height:360px; overflow:auto;"></div>
             <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Закрыть</button>
         </div>
     </div>
@@ -210,8 +227,8 @@
     <div id="modal-search" class="modal-overlay">
         <div class="modal-box">
             <h3>Поиск сообщений</h3>
-            <input type="text" id="search-input" class="auth-input" placeholder="Введите текст...">
-            <input type="date" id="search-date" class="auth-input" style="margin-bottom:10px;">
+            <input type="text" id="search-input" class="auth-input" placeholder="Введите текст..." />
+            <input type="date" id="search-date" class="auth-input" style="margin-bottom:10px;" />
             <select id="search-sender" class="auth-input" style="margin-bottom:10px;">
                 <option value="">Все отправители</option>
             </select>
@@ -309,12 +326,13 @@
                     <h2 style="font-size:19px;">Чаты</h2>
                     <div style="display:flex; gap:12px; align-items:center;">
                         <i class="fa-solid fa-users" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-group')"></i>
+                        <i class="fa-solid fa-address-book" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-contacts')"></i>
                         <i class="fa-solid fa-magnifying-glass" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-search')"></i>
                         <div id="my-avatar" class="avatar" style="width:35px; height:35px; font-size:16px; cursor:pointer;" onclick="openProfile()">👤</div>
                     </div>
                 </div>
                 <div style="display:flex; gap:6px;">
-                    <input type="text" id="search-user" class="auth-input" placeholder="Ник друга..." style="margin:0; padding:10px; font-size:13px;">
+                    <input type="text" id="search-user" class="auth-input" placeholder="Ник друга..." style="margin:0; padding:10px; font-size:13px;" />
                     <button class="primary-btn" style="width:40px; margin:0; padding:0; flex-shrink:0;" onclick="startDM()"><i class="fa-solid fa-plus"></i></button>
                 </div>
             </div>
@@ -364,7 +382,7 @@
             </div>
 
             <div class="input-bar">
-                <input type="file" id="file-input" style="display:none" accept="image/*, video/mp4, video/webm, image/gif, .pdf, .doc, .docx, .txt">
+                <input type="file" id="file-input" style="display:none" accept="image/*, video/mp4, video/webm, image/gif, .pdf, .doc, .docx, .txt" />
                 <button class="primary-btn icon-btn" title="Файл" onclick="document.getElementById('file-input').click()">
                     <i class="fa-solid fa-paperclip"></i>
                 </button>
@@ -374,7 +392,7 @@
                 <button class="primary-btn icon-btn" title="Эмодзи" onclick="openModal('modal-emoji-picker')">
                     <i class="fa-solid fa-face-smile"></i>
                 </button>
-                <input type="text" id="input-msg" class="msg-input" placeholder="Сообщение...">
+                <input type="text" id="input-msg" class="msg-input" placeholder="Сообщение..." />
                 <button class="primary-btn send-btn" title="Отправить" onclick="sendMsg()">
                     <i class="fa-solid fa-paper-plane"></i>
                 </button>
