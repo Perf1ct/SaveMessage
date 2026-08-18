@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="theme-color" content="#0f172a" />
-    <title>SafeMessage | Pro</title>
+    <title>VentaBand | Pro</title>
     <link rel="manifest" href="manifest.json" />
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/5968/5968756.png" />
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
@@ -20,7 +20,7 @@
     <!-- AUTH SCREEN -->
     <div id="auth-screen" class="modal-overlay" style="display:flex;">
         <div class="modal-box">
-            <h2 id="auth-title" style="margin-bottom:15px; font-size:20px;">SafeMessage Pro</h2>
+            <h2 id="auth-title" style="margin-bottom:15px; font-size:20px;">VentaBand Pro</h2>
             <input type="text" id="reg-nick" class="auth-input" placeholder="Никнейм (только буквы/цифры)" style="display:none" />
             <input type="email" id="auth-email" class="auth-input" placeholder="Email" />
             <input type="password" id="auth-pass" class="auth-input" placeholder="Пароль" />
@@ -29,17 +29,17 @@
         </div>
     </div>
 
-    <!-- PROFILE MODAL -->
+    <!-- PROFILE MODAL (my profile) -->
     <div id="modal-profile" class="modal-overlay">
         <div class="modal-box">
             <h3 id="profile-nick" style="font-size:18px; margin-bottom:5px;">@nick</h3>
             <div id="profile-avatar-view" class="avatar">👤</div>
-            <div class="avatar-buttons-container">
+            <div class="avatar-buttons-container" style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
                 <button class="primary-btn" id="upload-avatar-btn" onclick="uploadAvatarPhoto()">
-                    <i class="fa-solid fa-camera"></i> Upload
+                    <i class="fa-solid fa-camera"></i> Загрузить
                 </button>
                 <button class="primary-btn" id="remove-avatar-btn" onclick="removeAvatarPhoto()">
-                    <i class="fa-solid fa-trash"></i> Remove
+                    <i class="fa-solid fa-trash"></i> Удалить
                 </button>
             </div>
             <div class="emoji-grid" id="profile-emojis"></div>
@@ -50,37 +50,39 @@
         </div>
     </div>
 
-    <!-- USER PROFILE MODAL -->
+    <!-- USER PROFILE MODAL (someone else) -->
     <div id="modal-user-profile" class="modal-overlay">
         <div class="modal-box" style="max-width: 400px;">
             <button class="close-modal" onclick="closeAllModals()" style="position:absolute; top:10px; right:10px; background:none; border:none; color:var(--text-main); font-size:20px; cursor:pointer;">
                 <i class="fa-solid fa-xmark"></i>
             </button>
             <div id="user-profile-content" class="user-profile-card">
-                <div class="user-avatar-large">👤</div>
+                <div class="user-avatar-large" id="user-avatar-large">👤</div>
                 <h2 id="profile-user-nick" style="margin:10px 0; font-size:18px;">@Nick</h2>
                 <div class="user-status" id="profile-user-status">
                     <div class="status-dot dot-offline"></div>
                     <span id="profile-status-text">Не в сети</span>
                 </div>
-                <div class="user-stats">
-                    <div class="stat-item">
+                <div class="user-stats" style="display:flex; gap:12px; justify-content:center; margin-top:12px;">
+                    <div class="stat-item" style="text-align:center;">
                         <i class="fa-solid fa-message"></i>
-                        <span id="profile-msg-count">0</span>
+                        <div><span id="profile-msg-count">0</span></div>
                         <small>Сообщений</small>
                     </div>
-                    <div class="stat-item">
+                    <div class="stat-item" style="text-align:center;">
                         <i class="fa-solid fa-phone"></i>
-                        <span id="profile-call-count">0</span>
+                        <div><span id="profile-call-count">0</span></div>
                         <small>Звонков</small>
                     </div>
                 </div>
-                <button class="primary-btn" id="profile-start-chat" onclick="startDMWithNick()">
-                    <i class="fa-solid fa-comment"></i> Написать
-                </button>
-                <button class="primary-btn" id="profile-start-call" onclick="startCallWithNick()">
-                    <i class="fa-solid fa-phone"></i> Позвонить
-                </button>
+                <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">
+                    <button class="primary-btn" id="profile-start-chat" onclick="startDMWithNick()">
+                        <i class="fa-solid fa-comment"></i> Написать
+                    </button>
+                    <button class="primary-btn" id="profile-start-call" onclick="startCallWithNick()">
+                        <i class="fa-solid fa-phone"></i> Позвонить
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -323,11 +325,13 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px;">
-                    <h2 style="font-size:19px;">Чаты</h2>
-                    <div style="display:flex; gap:12px; align-items:center;">
-                        <i class="fa-solid fa-users" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-group')"></i>
-                        <i class="fa-solid fa-address-book" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-contacts')"></i>
-                        <i class="fa-solid fa-magnifying-glass" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-search')"></i>
+                    <h2 style="font-size:19px;">VentaBand</h2>
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <i class="fa-solid fa-users" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-group')" title="Создать группу"></i>
+                        <i class="fa-solid fa-address-book" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-contacts')" title="Контакты"></i>
+                        <i class="fa-solid fa-magnifying-glass" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-search')" title="Поиск"></i>
+                        <!-- Настройки прямо в хедере (ПК) -->
+                        <i class="fa-solid fa-sliders-h" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-settings')" title="Настройки"></i>
                         <div id="my-avatar" class="avatar" style="width:35px; height:35px; font-size:16px; cursor:pointer;" onclick="openProfile()">👤</div>
                     </div>
                 </div>
@@ -341,7 +345,7 @@
 
         <main class="chat-area" id="chat-area">
             <div class="chat-header">
-                <i class="fa-solid fa-arrow-left" id="btn-back" onclick="closeChat()"></i>
+                <i class="fa-solid fa-arrow-left" id="btn-back" onclick="closeChat()" style="display:none;"></i>
                 <div class="avatar-wrap">
                     <div id="active-emoji" class="avatar">👤</div>
                     <div id="active-status-dot" class="status-dot dot-offline"></div>
@@ -415,6 +419,9 @@
             <span class="panel-label">Поиск</span>
         </button>
     </div>
+
+    <!-- Remote audio element for voice calls (fixed autoplay handling) -->
+    <audio id="remote-audio" autoplay playsinline></audio>
 
     <script type="module" src="script.js"></script>
 </body>
