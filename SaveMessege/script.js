@@ -4,11 +4,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebas
 import {
   getFirestore, collection, addDoc, onSnapshot, query, where, orderBy,
   serverTimestamp, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc,
-  arrayUnion, limit
+  arrayUnion, limit, increment
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  onAuthStateChanged, signOut, signInAnonymously
+  onAuthStateChanged, signOut, signInAnonymously, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import {
   getDatabase, ref, set, onChildAdded, onValue, push, remove, onDisconnect
@@ -80,6 +80,15 @@ let recordedChunks = [];
 let selectedTheme = localStorage.getItem('selectedTheme') || '';
 let pinnedMessages = {};
 let searchResults = [];
+let activeChatData = null;
+let messageSheetData = null;
+let voiceNoteRecorder = null;
+let voiceNoteChunks = [];
+let voiceNoteStartedAt = 0;
+let voiceNoteStream = null;
+let voiceNoteTimer = null;
+let blockedUsers = JSON.parse(localStorage.getItem('blockedUsers') || '[]');
+let mutedChats = JSON.parse(localStorage.getItem('mutedChats') || '[]');
 
 // remote audio element (for voice calls autoplay handling)
 const remoteAudio = el('remote-audio');
@@ -138,6 +147,23 @@ function playNotificationSound() {
         const audio = new Audio(sounds.message);
         audio.volume = 0.3;
         audio.play().catch(e => console.log('Audio play blocked'));
+    }
+}
+
+async function requestBrowserNotifications() {
+    if (!('Notification' in window)) return false;
+    if (Notification.permission === 'default') await Notification.requestPermission();
+    return Notification.permission === 'granted';
+}
+
+function notifyAboutMessage(message, chatName) {
+    if (!('Notification' in window) || localStorage.getItem('notifications') === 'false' || !document.hidden) return;
+    if (mutedChats.includes(activeChatId)) return;
+    if (Notification.permission === 'granted') {
+        new Notification(`Новое сообщение в ${chatName || 'VentaBand'}`, {
+            body: message.type === 'voice' ? '🎙️ Голосовое сообщение' : (message.text || 'Медиа').substring(0, 120),
+            icon: document.querySelector('link[rel="apple-touch-icon"]')?.href
+        });
     }
 }
 
@@ -393,13 +419,13 @@ window.addReaction = async (mId, emoji) => {
     }
 };
 
-function displayReactions(reactionsData) {
+function displayReactions(reactionsData, messageId) {
     if (!reactionsData || Object.keys(reactionsData).length === 0) return '';
     
     let html = '<div class="message-reactions">';
     Object.entries(reactionsData).forEach(([emoji, users]) => {
         const count = Object.keys(users).length;
-        html += `<button class="reaction-button" onclick="addReaction('${emoji}')">
+         html += `<button class="reaction-button" onclick="addReaction('${messageId}', '${emoji}')">
             ${emoji} <span class="reaction-count">${count}</span>
         </button>`;
     });
@@ -650,6 +676,19 @@ if (el('btn-auth')) {
     };
 }
 
+if (el('btn-forgot-password')) {
+    el('btn-forgot-password').onclick = async () => {
+        const email = el('auth-email')?.value.trim();
+        if (!email) return alert('Сначала укажите email');
+        try {
+            await sendPasswordResetEmail(auth, email);
+            alert('Письмо для восстановления отправлено на указанный email.');
+        } catch (e) {
+            alert(e.code === 'auth/user-not-found' ? 'Пользователь с таким email не найден' : 'Не удалось отправить письмо восстановления');
+        }
+    };
+}
+
 // Guest login button (one-click)
 if (el('btn-guest')) {
   el('btn-guest').onclick = async () => {
@@ -688,6 +727,7 @@ onAuthStateChanged(auth, async (u) => {
         loadEmojiGrid('smileys');
         loadThemePicker();
         loadStickers();
+        requestBrowserNotifications();
     } else {
         user = null;
         if (el('auth-screen')) el('auth-screen').style.display = 'flex';
@@ -897,6 +937,7 @@ async function sendMediaMsg(url, type, fileName = '') {
     let lastMsg = url;
     if (type === 'video') lastMsg = '🎥 Видео';
     if (type === 'image') lastMsg = '📷 Фото';
+    if (type === 'voice') lastMsg = '🎙️ Голосовое сообщение';
 
     await updateDoc(doc(db, "chats", activeChatId), { lastMessage: lastMsg });
 
@@ -1041,9 +1082,9 @@ function loadChats() {
         snap.forEach(dSnap => {
             const c = dSnap.data();
             let title, avatarHtml, isV = false, otherId = null;
-            if (c.type === 'group') {
+            if (c.type === 'group' || c.type === 'channel') {
                 title = c.name;
-                avatarHtml = c.groupAvatarUrl ? `<img src="${c.groupAvatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">` : "👥";
+                avatarHtml = c.groupAvatarUrl ? `<img src="${c.groupAvatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">` : (c.type === 'channel' ? "📣" : "👥");
             } else {
                 otherId = c.members.find(id => id !== user.uid);
                 title = c.nicks?.[otherId] || "User";
@@ -1127,16 +1168,27 @@ function loadChats() {
 window.openChat = function(id, name, avatarHtml, isV, chatData) {
     activeChatId = id;
     activeChatMembers = chatData.members;
+    activeChatData = chatData;
     pinnedMessages[id] = chatData.pinnedMessages || [];
     let otherId = chatData.type === 'dm' ? chatData.members.find(u => u !== user.uid) : null;
 
     el('active-name').innerHTML = `${name} ${getBadge(isV)}`;
     el('active-emoji').innerHTML = avatarHtml;
-    el('add-member-btn').style.display = chatData.type === 'group' ? 'block' : 'none';
+    el('add-member-btn').style.display = (chatData.type === 'group' || chatData.type === 'channel') ? 'block' : 'none';
     el('btn-call').style.display = 'block';
     el('btn-voice-call').style.display = 'block';
-    el('btn-group-settings').style.display = chatData.type === 'group' ? 'block' : 'none';
-    el('btn-pin').style.display = chatData.type === 'group' ? 'block' : 'none';
+    el('btn-mute-chat').style.display = 'inline-flex';
+    el('btn-mute-chat').innerHTML = mutedChats.includes(id)
+        ? '<i class="fa-solid fa-bell-slash"></i>' : '<i class="fa-solid fa-bell"></i>';
+    el('btn-group-settings').style.display = (chatData.type === 'group' || chatData.type === 'channel') ? 'block' : 'none';
+    el('btn-pin').style.display = (chatData.type === 'group' || chatData.type === 'channel') ? 'block' : 'none';
+    const canPost = chatData.type !== 'channel' || (chatData.admins || Object.keys(chatData.roles || {}).filter(uid => chatData.roles[uid] === 'admin')).includes(user.uid);
+    el('input-msg').disabled = !canPost;
+    el('voice-note-btn').disabled = !canPost;
+    el('input-msg').closest('.input-bar').style.display = canPost ? 'flex' : 'none';
+    el('admin-only-notice').style.display = canPost ? 'none' : 'block';
+    el('input-msg').placeholder = canPost ? 'Сообщение...' : 'Только администраторы могут отправлять сообщения';
+    el('input-msg').value = localStorage.getItem(`draft_${id}`) || '';
     el('app').classList.add('show-chat');
     cancelReply();
 
@@ -1181,9 +1233,10 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
         box.innerHTML = '';
         let hasNewMessages = false;
 
-        snap.forEach(mDoc => {
+         snap.forEach(mDoc => {
             const m = mDoc.data();
             const mId = mDoc.id;
+             if (blockedUsers.includes(m.senderId)) return;
             const isMine = m.senderId === user.uid;
             let replyHtml = '';
             if (m.replyTo) {
@@ -1195,34 +1248,46 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
 
             let content = m.text || '';
             if (m.type === "image") content = `<img src="${m.text}" style="max-width:100%; border-radius:15px; margin-top:5px; cursor:pointer;" onclick="window.open('${m.text}')">`;
-            if (m.type === "video") content = `<video src="${m.text}" controls style="max-width:100%; border-radius:15px; margin-top:5px; background:#000;"></video>`;
+             if (m.type === "video") content = `<video src="${m.text}" controls style="max-width:100%; border-radius:15px; margin-top:5px; background:#000;"></video>`;
+             if (m.type === "voice") content = `<div class="voice-message"><button class="voice-play" onclick="toggleVoicePlayback(this, '${m.text}')"><i class="fa-solid fa-play"></i></button><div class="voice-wave"><span></span><span></span><span></span><span></span><span></span><span></span></div><span class="voice-duration">--:--</span><audio preload="metadata" src="${m.text}"></audio></div>`;
 
             const safeText = (m.type ? 'Медиа' : (m.text || '').replace(/'/g, "\\'"));
             const actions = `<i class="fa-solid fa-reply msg-action" onclick="setReply('${mId}', '${safeText}', '${m.senderNick || ''}')"></i>
                 ${isMine ? `<i class="fa-solid fa-trash msg-action" onclick="deleteMsg('${mId}')"></i><i class="fa-solid fa-pen msg-action" onclick="editMsg('${mId}')"></i>` : `<i class="fa-solid fa-share msg-action" onclick="forwardMsg('${mId}')"></i>`}
                 <i class="fa-solid fa-heart msg-action" onclick="addReaction('${mId}', '❤️')"></i>`;
 
-            const reactionsHtml = displayReactions(m.reactions);
+             const reactionsHtml = displayReactions(m.reactions, mId);
             const statusBadge = m.status === 'read' ? '👁️' : m.status === 'delivered' ? '✅' : '⏱️';
             const editedBadge = m.edited ? ' <span style="font-size:11px; color:var(--text-muted);">(ред.)</span>' : '';
 
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${isMine ? 'sent' : 'received'}`;
             msgDiv.id = `m-${mId}`;
-            msgDiv.innerHTML = `<div class="msg-info">@${m.senderNick || 'user'} ${getBadge(m.senderVerified)} ${editedBadge} ${isMine ? statusBadge : ''}</div><div class="bubble">${replyHtml}${content}${reactionsHtml}<div style="margin-top:6px; display:flex; gap:8px; align-items:center;">${actions}</div></div>`;
+             const viewsBadge = chatData.type === 'channel' ? `<span class="message-views"><i class="fa-solid fa-eye"></i> ${m.views || 0}</span>` : '';
+             msgDiv.innerHTML = `<div class="msg-info">@${m.senderNick || 'user'} ${getBadge(m.senderVerified)} ${editedBadge} ${isMine ? statusBadge : ''} ${viewsBadge}</div><div class="bubble">${replyHtml}${content}${reactionsHtml}<div style="margin-top:6px; display:flex; gap:8px; align-items:center;">${actions}</div></div>`;
             
             let startX = 0;
-            msgDiv.ontouchstart = (e) => startX = e.touches[0].clientX;
+             let longPressTimer;
+             msgDiv.ontouchstart = (e) => {
+                 startX = e.touches[0].clientX;
+                 longPressTimer = setTimeout(() => openMessageSheet(mId, m), 550);
+             };
             msgDiv.ontouchmove = (e) => {
+                 clearTimeout(longPressTimer);
                 let diff = e.touches[0].clientX - startX;
                 if (diff > 0 && diff < 80) msgDiv.style.transform = `translateX(${diff}px)`;
             };
             msgDiv.ontouchend = (e) => {
+                 clearTimeout(longPressTimer);
                 let diff = e.changedTouches[0].clientX - startX;
                 if (diff > 50) setReply(mId, m.type ? 'Медиа' : m.text, m.senderNick);
                 msgDiv.style.transform = `translateX(0)`;
             };
+             msgDiv.oncontextmenu = (e) => { e.preventDefault(); openMessageSheet(mId, m); };
             box.appendChild(msgDiv);
+             if (chatData.type === 'channel' && !isMine && !m.viewedBy?.[user.uid]) {
+                 updateDoc(doc(db, `chats/${id}/messages`, mId), { [`viewedBy.${user.uid}`]: true, views: increment(1) }).catch(() => {});
+             }
 
             if (!isMine && !wasAtBottom) {
                 hasNewMessages = true;
@@ -1236,6 +1301,10 @@ window.openChat = function(id, name, avatarHtml, isV, chatData) {
             newMessagesCount++;
             showNewMessagesIndicator(newMessagesCount);
         }
+        if (snap.docChanges().some(change => change.type === 'added' && change.doc.data().senderId !== user.uid)) {
+            const latest = snap.docs[snap.docs.length - 1]?.data();
+            if (latest) notifyAboutMessage(latest, name);
+        }
     }, (err) => {
         console.error("unsubMsgs error:", err);
     });
@@ -1246,13 +1315,15 @@ window.closeChat = () => {
     if (unsubMsgs) unsubMsgs();
     activeChatId = null;
     activeChatMembers = [];
+    activeChatData = null;
 };
 
 window.sendMsg = async () => {
     const inp = el('input-msg');
     const txt = inp?.value.trim();
-    if (!txt || !activeChatId) return;
+    if (!txt || !activeChatId || (activeChatData?.type === 'channel' && !(activeChatData.admins || []).includes(user.uid))) return;
     if (inp) inp.value = '';
+    localStorage.removeItem(`draft_${activeChatId}`);
     await updateDoc(doc(db, "chats", activeChatId), { [`typing.${user.uid}`]: false });
 
     try {
@@ -1284,6 +1355,147 @@ window.sendMsg = async () => {
 if (el('input-msg')) el('input-msg').onkeydown = (e) => {
     if (e.key === 'Enter') sendMsg();
 };
+
+if (el('input-msg')) {
+    el('input-msg').addEventListener('input', () => {
+        if (activeChatId) localStorage.setItem(`draft_${activeChatId}`, el('input-msg').value);
+        requestAnimationFrame(() => {
+            const box = el('ui-msgs');
+            if (box && document.activeElement === el('input-msg')) box.scrollTop = box.scrollHeight;
+        });
+    });
+}
+
+function formatVoiceTime(seconds) {
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function setVoiceNoteUI(recording) {
+    const button = el('voice-note-btn');
+    if (!button) return;
+    const existingCancel = el('voice-note-cancel');
+    if (existingCancel) existingCancel.remove();
+    button.classList.toggle('recording', recording);
+    button.innerHTML = recording
+        ? '<span class="voice-recording-time">00:00</span><i class="fa-solid fa-stop"></i>'
+        : '<i class="fa-solid fa-microphone"></i>';
+    el('input-msg').placeholder = recording ? 'Идёт запись… нажмите для отправки' : 'Сообщение...';
+}
+
+async function stopVoiceNote(cancel = false) {
+    if (!voiceNoteRecorder) return;
+    if (voiceNoteTimer) clearInterval(voiceNoteTimer);
+    const recorder = voiceNoteRecorder;
+    voiceNoteRecorder = null;
+    setVoiceNoteUI(false);
+    if (cancel) {
+        voiceNoteChunks = [];
+        return;
+    }
+    recorder.onstop = async () => {
+        voiceNoteStream?.getTracks().forEach(track => track.stop());
+        voiceNoteStream = null;
+        if (!voiceNoteChunks.length || !activeChatId) return;
+        const blob = new Blob(voiceNoteChunks, { type: recorder.mimeType || 'audio/webm' });
+        voiceNoteChunks = [];
+        try {
+            const url = await uploadVoiceToCatbox(blob);
+            await sendMediaMsg(url, 'voice');
+        } catch (e) {
+            alert('Не удалось загрузить голосовое сообщение');
+            console.error(e);
+        }
+    };
+    if (recorder.state !== 'inactive') recorder.stop();
+}
+
+async function startVoiceNote() {
+    if (!activeChatId || el('voice-note-btn')?.disabled) return;
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/ogg;codecs=opus';
+        voiceNoteChunks = [];
+        voiceNoteRecorder = new MediaRecorder(stream, { mimeType });
+        voiceNoteRecorder.ondataavailable = event => { if (event.data.size) voiceNoteChunks.push(event.data); };
+        voiceNoteStream = stream;
+        voiceNoteStartedAt = Date.now();
+        voiceNoteRecorder.start();
+        setVoiceNoteUI(true);
+        voiceNoteTimer = setInterval(() => {
+            const time = el('voice-note-btn')?.querySelector('.voice-recording-time');
+            if (time) time.textContent = formatVoiceTime(Math.floor((Date.now() - voiceNoteStartedAt) / 1000));
+        }, 1000);
+        const cancel = document.createElement('button');
+        cancel.id = 'voice-note-cancel';
+        cancel.className = 'primary-btn icon-btn voice-note-cancel';
+        cancel.type = 'button';
+        cancel.title = 'Отменить запись';
+        cancel.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+        cancel.onclick = () => stopVoiceNote(true);
+        el('voice-note-btn').before(cancel);
+    } catch (e) {
+        alert('Разрешите доступ к микрофону для записи голосовых сообщений');
+    }
+}
+
+if (el('voice-note-btn')) {
+    el('voice-note-btn').addEventListener('click', () => {
+        if (voiceNoteRecorder) stopVoiceNote();
+        else startVoiceNote();
+    });
+}
+
+async function uploadVoiceToCatbox(blob) {
+    const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type });
+    return uploadVideoToCatbox(file);
+}
+
+window.toggleVoicePlayback = (button, url) => {
+    const audio = button.parentElement.querySelector('audio');
+    if (!audio) return;
+    if (audio.paused) {
+        audio.play();
+        button.innerHTML = '<i class="fa-solid fa-pause"></i>';
+        audio.onended = () => { button.innerHTML = '<i class="fa-solid fa-play"></i>'; };
+    } else {
+        audio.pause();
+        button.innerHTML = '<i class="fa-solid fa-play"></i>';
+    }
+    audio.onloadedmetadata = () => {
+        const duration = button.parentElement.querySelector('.voice-duration');
+        if (duration && Number.isFinite(audio.duration)) duration.textContent = formatVoiceTime(Math.floor(audio.duration));
+    };
+};
+
+function openMessageSheet(mId, message) {
+    messageSheetData = { mId, message };
+    const sheet = el('message-action-sheet');
+    if (!sheet) return;
+    el('sheet-message-preview').textContent = message.type === 'voice' ? '🎙️ Голосовое сообщение' : (message.text || 'Медиа').substring(0, 80);
+    sheet.classList.add('open');
+    sheet.setAttribute('aria-hidden', 'false');
+}
+
+function closeMessageSheet() {
+    const sheet = el('message-action-sheet');
+    if (sheet) { sheet.classList.remove('open'); sheet.setAttribute('aria-hidden', 'true'); }
+    messageSheetData = null;
+}
+
+document.querySelectorAll('#message-action-sheet [data-action]').forEach(button => {
+    button.addEventListener('click', async () => {
+        if (!messageSheetData) return;
+        const { mId, message } = messageSheetData;
+        const action = button.dataset.action;
+        closeMessageSheet();
+        if (action === 'reply') setReply(mId, message.type ? 'Медиа' : message.text, message.senderNick);
+        if (action === 'copy') await navigator.clipboard?.writeText(message.text || '');
+        if (action === 'forward') forwardMsg(mId);
+        if (action === 'pin') togglePinMessage(mId);
+        if (action === 'edit') editMsg(mId);
+        if (action === 'delete') deleteMsg(mId);
+    });
+});
 
 // === WEBRTC VIDEO CALL ===
 const servers = { iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }] };
@@ -1880,6 +2092,7 @@ window.stopScreenShare = async () => {
 window.openProfile = () => {
     openModal('modal-profile');
     if (el('profile-nick')) el('profile-nick').innerText = "@" + (user?.nickname || '');
+    if (el('profile-bio')) el('profile-bio').value = user?.bio || '';
     const avatarContainer = el('profile-avatar-view');
     if (avatarContainer) {
         if (user?.avatarUrl) avatarContainer.innerHTML = `<img src="${user.avatarUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.onerror=null;this.src='/assets/default-avatar.png'">`;
@@ -1904,6 +2117,18 @@ window.openProfile = () => {
     }
 };
 
+window.saveProfile = async () => {
+    const bio = el('profile-bio')?.value.trim().substring(0, 160) || '';
+    try {
+        await updateDoc(doc(db, "users", user.uid), { bio });
+        user.bio = bio;
+        alert('Профиль сохранён');
+    } catch (e) {
+        console.error(e);
+        alert('Не удалось сохранить профиль');
+    }
+};
+
 // === USER PROFILE ===
 window.openUserProfile = async (userId) => {
     try {
@@ -1917,6 +2142,12 @@ window.openUserProfile = async (userId) => {
 
         el('profile-user-nick').innerText = "@" + userData.nickname;
         el('profile-status-text').innerText = userData.isOnline ? "✅ В сети" : "⏱️ Не в сети";
+        el('profile-user-bio').innerText = userData.bio || '';
+        el('profile-user-bio').style.display = userData.bio ? 'block' : 'none';
+        const blockButton = el('profile-block-user');
+        if (blockButton) blockButton.innerHTML = blockedUsers.includes(userId)
+            ? '<i class="fa-solid fa-unlock"></i> Разблокировать'
+            : '<i class="fa-solid fa-ban"></i> Заблокировать';
         el('profile-user-status').querySelector('.status-dot').className =
             `status-dot ${userData.isOnline ? 'dot-online' : 'dot-offline'}`;
 
@@ -1931,6 +2162,15 @@ window.openUserProfile = async (userId) => {
     } catch (e) {
         console.error("Error loading profile:", e);
     }
+};
+
+window.toggleBlockSelectedUser = () => {
+    if (!selectedUserProfile) return;
+    const id = selectedUserProfile.uid;
+    blockedUsers = blockedUsers.includes(id) ? blockedUsers.filter(uid => uid !== id) : [...blockedUsers, id];
+    localStorage.setItem('blockedUsers', JSON.stringify(blockedUsers));
+    closeAllModals();
+    if (activeChatId) openChat(activeChatId, el('active-name').innerText, el('active-emoji').innerHTML, false, activeChatData);
 };
 
 window.startDMWithNick = async () => {
@@ -1986,6 +2226,37 @@ window.confirmCreateGroup = async () => {
     });
     el('new-group-name').value = '';
     closeAllModals();
+};
+
+window.confirmCreateChannel = async () => {
+    const name = el('new-channel-name')?.value.trim();
+    const description = el('new-channel-description')?.value.trim() || '';
+    if (!name) return alert('Введите название канала');
+    try {
+        await addDoc(collection(db, "chats"), {
+            name, description, type: 'channel', members: [user.uid],
+            admins: [user.uid], roles: { [user.uid]: 'admin' },
+            lastMessage: '📣 Канал создан', pinnedMessages: [], typing: {},
+            createdAt: serverTimestamp()
+        });
+        el('new-channel-name').value = '';
+        el('new-channel-description').value = '';
+        closeAllModals();
+    } catch (e) {
+        console.error(e);
+        alert('Не удалось создать канал');
+    }
+};
+
+window.toggleMuteChat = () => {
+    if (!activeChatId) return;
+    mutedChats = mutedChats.includes(activeChatId)
+        ? mutedChats.filter(id => id !== activeChatId)
+        : [...mutedChats, activeChatId];
+    localStorage.setItem('mutedChats', JSON.stringify(mutedChats));
+    el('btn-mute-chat').innerHTML = mutedChats.includes(activeChatId)
+        ? '<i class="fa-solid fa-bell-slash"></i>' : '<i class="fa-solid fa-bell"></i>';
+    alert(mutedChats.includes(activeChatId) ? 'Звук чата выключен' : 'Звук чата включён');
 };
 
 window.confirmAddMember = async () => {
@@ -2336,6 +2607,25 @@ if (backBtn) {
     const su = el('search-user');
     if (su) su.focus();
   };
+}
+
+let mobileGestureStartX = 0;
+if (el('chat-area')) {
+    el('chat-area').addEventListener('touchstart', event => {
+        mobileGestureStartX = event.touches[0].clientX;
+    }, { passive: true });
+    el('chat-area').addEventListener('touchend', event => {
+        const delta = event.changedTouches[0].clientX - mobileGestureStartX;
+        if (window.innerWidth <= 900 && mobileGestureStartX < 42 && delta > 80) closeChat();
+    }, { passive: true });
+}
+
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+        if (document.activeElement === el('input-msg')) {
+            requestAnimationFrame(() => scrollToBottom());
+        }
+    });
 }
 
 // Wrap loadChats to show hint if no chats in UI
