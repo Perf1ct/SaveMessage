@@ -25,6 +25,7 @@
             <input type="email" id="auth-email" class="auth-input" placeholder="Email" />
             <input type="password" id="auth-pass" class="auth-input" placeholder="Пароль" />
             <button class="primary-btn" id="btn-auth">Войти</button>
+            <button class="text-btn" id="btn-forgot-password" type="button">Забыли пароль?</button>
             <p id="auth-toggle" style="cursor:pointer; color:var(--primary); font-size:12px; margin-top:5px;">Создать аккаунт</p>
         </div>
     </div>
@@ -34,6 +35,9 @@
         <div class="modal-box">
             <h3 id="profile-nick" style="font-size:18px; margin-bottom:5px;">@nick</h3>
             <div id="profile-avatar-view" class="avatar">👤</div>
+            <label class="profile-label" for="profile-bio">О себе</label>
+            <textarea id="profile-bio" class="auth-input profile-bio" maxlength="160" placeholder="Расскажите о себе..."></textarea>
+            <button class="primary-btn" id="save-profile-btn" onclick="saveProfile()">Сохранить профиль</button>
             <div class="avatar-buttons-container" style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
                 <button class="primary-btn" id="upload-avatar-btn" onclick="uploadAvatarPhoto()">
                     <i class="fa-solid fa-camera"></i> Загрузить
@@ -63,6 +67,7 @@
                     <div class="status-dot dot-offline"></div>
                     <span id="profile-status-text">Не в сети</span>
                 </div>
+                 <p id="profile-user-bio" class="user-bio"></p>
                 <div class="user-stats" style="display:flex; gap:12px; justify-content:center; margin-top:12px;">
                     <div class="stat-item" style="text-align:center;">
                         <i class="fa-solid fa-message"></i>
@@ -82,6 +87,9 @@
                     <button class="primary-btn" id="profile-start-call" onclick="startCallWithNick()">
                         <i class="fa-solid fa-phone"></i> Позвонить
                     </button>
+                     <button class="primary-btn danger-outline" id="profile-block-user" onclick="toggleBlockSelectedUser()">
+                         <i class="fa-solid fa-ban"></i> Заблокировать
+                     </button>
                 </div>
             </div>
         </div>
@@ -94,6 +102,32 @@
             <input type="text" id="new-group-name" class="auth-input" placeholder="Название группы" />
             <button class="primary-btn" onclick="confirmCreateGroup()">Создать</button>
             <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Отмена</button>
+        </div>
+    </div>
+
+    <!-- CHANNEL CREATE MODAL -->
+    <div id="modal-channel" class="modal-overlay">
+        <div class="modal-box">
+            <h3 style="font-size:17px; margin-bottom:10px;">Новый канал</h3>
+            <input type="text" id="new-channel-name" class="auth-input" placeholder="Название канала" maxlength="80" />
+            <input type="text" id="new-channel-description" class="auth-input" placeholder="Описание (необязательно)" maxlength="160" />
+            <button class="primary-btn" onclick="confirmCreateChannel()">Создать канал</button>
+            <button class="primary-btn" style="background:transparent; color:var(--text-main);" onclick="closeAllModals()">Отмена</button>
+        </div>
+    </div>
+
+    <!-- MESSAGE ACTION BOTTOM SHEET -->
+    <div id="message-action-sheet" class="bottom-sheet-overlay" aria-hidden="true">
+        <div class="message-action-sheet" role="dialog" aria-label="Действия с сообщением">
+            <div class="sheet-handle"></div>
+            <div class="sheet-title" id="sheet-message-preview">Сообщение</div>
+            <button class="sheet-action" data-action="reply"><i class="fa-solid fa-reply"></i>Ответить</button>
+            <button class="sheet-action" data-action="copy"><i class="fa-solid fa-copy"></i>Скопировать текст</button>
+            <button class="sheet-action" data-action="forward"><i class="fa-solid fa-share"></i>Переслать</button>
+            <button class="sheet-action" data-action="pin"><i class="fa-solid fa-thumbtack"></i>Закрепить</button>
+            <button class="sheet-action" data-action="edit"><i class="fa-solid fa-pen"></i>Редактировать</button>
+            <button class="sheet-action danger" data-action="delete"><i class="fa-solid fa-trash"></i>Удалить</button>
+            <button class="sheet-cancel" data-action="close">Отмена</button>
         </div>
     </div>
 
@@ -328,6 +362,7 @@
                     <h2 style="font-size:19px;">VentaBand</h2>
                     <div style="display:flex; gap:10px; align-items:center;">
                         <i class="fa-solid fa-users" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-group')" title="Создать группу"></i>
+                        <i class="fa-solid fa-bullhorn" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-channel')" title="Создать канал"></i>
                         <i class="fa-solid fa-address-book" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-contacts')" title="Контакты"></i>
                         <i class="fa-solid fa-magnifying-glass" style="cursor:pointer; color:var(--primary); font-size:18px;" onclick="openModal('modal-search')" title="Поиск"></i>
                         <!-- Настройки прямо в хедере (ПК) -->
@@ -361,6 +396,9 @@
                     </button>
                     <button class="header-icon-btn" id="btn-voice-call" style="display:none;" onclick="startVoiceCall()" title="Голосовой звонок">
                         <i class="fa-solid fa-phone"></i>
+                    </button>
+                    <button class="header-icon-btn" id="btn-mute-chat" style="display:none;" onclick="toggleMuteChat()" title="Выключить звук чата">
+                        <i class="fa-solid fa-bell"></i>
                     </button>
                     <i class="fa-solid fa-video" id="btn-call" style="display:none; color:var(--primary); cursor:pointer; font-size:18px;" onclick="startCall()"></i>
                     <i class="fa-solid fa-user-plus" id="add-member-btn" style="display:none; color:var(--primary); cursor:pointer; font-size:18px;" onclick="openModal('modal-member')"></i>
@@ -397,10 +435,14 @@
                     <i class="fa-solid fa-face-smile"></i>
                 </button>
                 <input type="text" id="input-msg" class="msg-input" placeholder="Сообщение..." />
+                <button class="primary-btn icon-btn voice-note-btn" id="voice-note-btn" title="Голосовое сообщение" aria-label="Голосовое сообщение">
+                    <i class="fa-solid fa-microphone"></i>
+                </button>
                 <button class="primary-btn send-btn" title="Отправить" onclick="sendMsg()">
                     <i class="fa-solid fa-paper-plane"></i>
                 </button>
             </div>
+            <div id="admin-only-notice" class="admin-only-notice" style="display:none;">Только администраторы могут отправлять сообщения</div>
         </main>
     </div>
 
